@@ -1,7 +1,7 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
-// Configuração do banco MySQL (único tipo suportado)
+// Configuração do banco MySQL
 const dbConfig = {
   host: process.env.DB_HOST || 'mercocamp.ip.odhserver.com',
   port: parseInt(process.env.DB_PORT) || 33101,
@@ -9,71 +9,259 @@ const dbConfig = {
   password: process.env.DB_PASSWORD || 'masterkey'
 };
 
-console.log('🔧 Configuração MySQL para Render:');
-console.log(`   Host: ${dbConfig.host}:${dbConfig.port}`);
+console.log('🔧 Configuração MySQL detalhada:');
+console.log(`   Host: ${dbConfig.host}`);
+console.log(`   Port: ${dbConfig.port}`);
 console.log(`   User: ${dbConfig.user}`);
-console.log(`   Password: ***`);
+console.log(`   Password: ${dbConfig.password ? '***(' + dbConfig.password.length + ' chars)' : 'UNDEFINED'}`);
+console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
 
-// Configuração otimizada para cloud deployment - múltiplas tentativas
-const baseConfig = {
-  host: dbConfig.host,
-  port: dbConfig.port,
-  user: dbConfig.user,
-  password: dbConfig.password,
-  waitForConnections: true,
-  charset: 'utf8mb4',
-  // Timeouts mais longos para cloud
-  connectTimeout: 180000, // 3 minutos
-  connectionLimit: 3, // Muito conservador
-  queueLimit: 5,
-  idleTimeout: 300000,
-  maxIdle: 1,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 10000
+// Função para teste TCP detalhado
+const testTCPConnection = async (host, port, timeout = 30000) => {
+  console.log(`🔌 Iniciando teste TCP para ${host}:${port} (timeout: ${timeout}ms)`);
+  
+  return new Promise((resolve, reject) => {
+    const net = require('net');
+    const socket = new net.Socket();
+    const startTime = Date.now();
+    
+    let resolved = false;
+    
+    const cleanup = () => {
+      if (!resolved) {
+        resolved = true;
+        try {
+          socket.destroy();
+        } catch (e) {}
+      }
+    };
+    
+    const timer = setTimeout(() => {
+      const duration = Date.now() - startTime;
+      console.log(`❌ TCP timeout após ${duration}ms para ${host}:${port}`);
+      cleanup();
+      reject(new Error(`TCP timeout para ${host}:${port} após ${timeout}ms`));
+    }, timeout);
+    
+    socket.on('connect', () => {
+      const duration = Date.now() - startTime;
+      console.log(`✅ TCP conectado em ${duration}ms para ${host}:${port}`);
+      clearTimeout(timer);
+      cleanup();
+      resolve(true);
+    });
+    
+    socket.on('error', (err) => {
+      const duration = Date.now() - startTime;
+      console.log(`❌ TCP erro após ${duration}ms para ${host}:${port}: ${err.message}`);
+      clearTimeout(timer);
+      cleanup();
+      reject(err);
+    });
+    
+    socket.on('timeout', () => {
+      const duration = Date.now() - startTime;
+      console.log(`❌ TCP socket timeout após ${duration}ms para ${host}:${port}`);
+      clearTimeout(timer);
+      cleanup();
+      reject(new Error(`Socket timeout para ${host}:${port}`));
+    });
+    
+    console.log(`🔄 Tentando conectar TCP ${host}:${port}...`);
+    socket.setTimeout(timeout);
+    socket.connect(port, host);
+  });
 };
 
-// Tentar múltiplas configurações
-const configs = [
-  // Config 1: Com SSL
-  {
-    ...baseConfig,
-    ssl: { rejectUnauthorized: false }
-  },
-  // Config 2: Sem SSL (original)
-  {
-    ...baseConfig,
-    ssl: false
-  },
-  // Config 3: Porta padrão MySQL
-  {
-    ...baseConfig,
-    port: 3306,
-    ssl: false
+// Função para teste MySQL detalhado
+const testMySQLConnection = async (config, databaseName) => {
+  console.log(`🗄️ Testando conexão MySQL para database: ${databaseName}`);
+  console.log(`   Config: ${config.user}@${config.host}:${config.port}/${databaseName}`);
+  
+  let connection = null;
+  const startTime = Date.now();
+  
+  try {
+    // Criar conexão individual (não pool)
+    console.log(`🔄 Criando conexão MySQL...`);
+    connection = await mysql.createConnection({
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      password: config.password,
+      database: databaseName,
+      connectTimeout: 60000,
+      ssl: false,
+      charset: 'utf8mb4'
+    });
+    
+    const connectDuration = Date.now() - startTime;
+    console.log(`✅ Conexão MySQL estabelecida em ${connectDuration}ms`);
+    
+    // Testar query básica
+    console.log(`🔄 Executando query de teste...`);
+    const queryStart = Date.now();
+    const [rows] = await connection.execute('SELECT 1 as test');
+    const queryDuration = Date.now() - queryStart;
+    
+    console.log(`✅ Query executada em ${queryDuration}ms`);
+    console.log(`   Resultado: ${JSON.stringify(rows[0])}`);
+    
+    const totalDuration = Date.now() - startTime;
+    console.log(`🎉 Teste MySQL completo em ${totalDuration}ms para ${databaseName}`);
+    
+    return { success: true, duration: totalDuration };
+    
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.log(`❌ Erro MySQL após ${duration}ms para ${databaseName}:`);
+    console.log(`   Tipo: ${error.constructor.name}`);
+    console.log(`   Code: ${error.code || 'N/A'}`);
+    console.log(`   Errno: ${error.errno || 'N/A'}`);
+    console.log(`   SQLState: ${error.sqlState || 'N/A'}`);
+    console.log(`   Message: ${error.message}`);
+    
+    return { success: false, error, duration };
+    
+  } finally {
+    if (connection) {
+      try {
+        console.log(`🔄 Fechando conexão de teste...`);
+        await connection.end();
+        console.log(`✅ Conexão de teste fechada`);
+      } catch (e) {
+        console.log(`⚠️ Erro ao fechar conexão: ${e.message}`);
+      }
+    }
   }
-];
+};
 
-let poolConfig = configs[0]; // Começar com SSL
+// Configuração dos pools (criados após testes)
+let dbusersPool = null;
+let dbcheckinPool = null;
+let dbmercocampPool = null;
 
-// Pools de conexão MySQL para cada banco
-const dbusersPool = mysql.createPool({
-  ...poolConfig,
-  database: 'dbusers'
-});
+// Função para criar pools após validação
+const createPools = () => {
+  console.log('🏗️ Criando pools de conexão MySQL...');
+  
+  const poolConfig = {
+    host: dbConfig.host,
+    port: dbConfig.port,
+    user: dbConfig.user,
+    password: dbConfig.password,
+    waitForConnections: true,
+    charset: 'utf8mb4',
+    connectTimeout: 120000,
+    connectionLimit: 5,
+    queueLimit: 10,
+    idleTimeout: 300000,
+    maxIdle: 2,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 30000,
+    ssl: false
+  };
+  
+  dbusersPool = mysql.createPool({ ...poolConfig, database: 'dbusers' });
+  dbcheckinPool = mysql.createPool({ ...poolConfig, database: 'dbcheckin' });
+  dbmercocampPool = mysql.createPool({ ...poolConfig, database: 'dbmercocamp' });
+  
+  console.log('✅ Pools criados: dbusers, dbcheckin, dbmercocamp');
+};
 
-const dbcheckinPool = mysql.createPool({
-  ...poolConfig,
-  database: 'dbcheckin'
-});
+// Função principal de teste
+const testConnections = async () => {
+  console.log('🚀 ========== INICIANDO DIAGNÓSTICO COMPLETO ==========');
+  console.log(`⏰ Timestamp: ${new Date().toISOString()}`);
+  
+  try {
+    // Fase 1: Teste TCP
+    console.log('\n📡 FASE 1: Teste de Conectividade TCP');
+    console.log('==========================================');
+    
+    const portsToTest = [dbConfig.port, 3306, 3307];
+    let workingPort = null;
+    
+    for (const port of portsToTest) {
+      try {
+        await testTCPConnection(dbConfig.host, port, 30000);
+        workingPort = port;
+        console.log(`🎯 Porta funcional encontrada: ${port}`);
+        break;
+      } catch (error) {
+        console.log(`❌ Porta ${port} inacessível: ${error.message}`);
+      }
+    }
+    
+    if (!workingPort) {
+      console.log('\n❌ DIAGNÓSTICO: Bloqueio de rede total');
+      console.log('💡 SOLUÇÃO: Verificar firewall ou migrar para banco em nuvem');
+      return false;
+    }
+    
+    // Atualizar configuração com porta que funciona
+    if (workingPort !== dbConfig.port) {
+      console.log(`🔄 Atualizando porta de ${dbConfig.port} para ${workingPort}`);
+      dbConfig.port = workingPort;
+    }
+    
+    // Fase 2: Teste MySQL
+    console.log('\n🗄️ FASE 2: Teste de Autenticação MySQL');
+    console.log('==========================================');
+    
+    const databases = ['dbusers', 'dbcheckin', 'dbmercocamp'];
+    const results = {};
+    
+    for (const db of databases) {
+      console.log(`\n🔍 Testando banco: ${db}`);
+      results[db] = await testMySQLConnection(dbConfig, db);
+    }
+    
+    // Análise dos resultados
+    console.log('\n📊 ANÁLISE DOS RESULTADOS');
+    console.log('==========================');
+    
+    const successful = Object.values(results).filter(r => r.success).length;
+    const total = databases.length;
+    
+    console.log(`✅ Sucessos: ${successful}/${total}`);
+    
+    if (successful === total) {
+      console.log('🎉 DIAGNÓSTICO: Todos os bancos acessíveis!');
+      console.log('🏗️ Criando pools de produção...');
+      createPools();
+      return true;
+    } else if (successful > 0) {
+      console.log('⚠️ DIAGNÓSTICO: Conectividade parcial');
+      console.log('💡 SOLUÇÃO: Verificar permissões específicas por banco');
+      createPools(); // Criar pools mesmo com falhas parciais
+      return false;
+    } else {
+      console.log('❌ DIAGNÓSTICO: Falha total de autenticação MySQL');
+      console.log('💡 SOLUÇÃO: Verificar credenciais, bind-address ou SSL requirements');
+      return false;
+    }
+    
+  } catch (error) {
+    console.log(`\n💥 ERRO CRÍTICO NO DIAGNÓSTICO: ${error.message}`);
+    console.log(`Stack: ${error.stack}`);
+    return false;
+    
+  } finally {
+    console.log('\n🏁 ========== DIAGNÓSTICO FINALIZADO ==========\n');
+  }
+};
 
-const dbmercocampPool = mysql.createPool({
-  ...poolConfig,
-  database: 'dbmercocamp'
-});
+// Inicializar pools na importação
+createPools();
 
-// Funções para executar queries em cada banco específico
+// Funções de execução com retry
 const executeUsersQuery = async (query, params = [], retries = 3) => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      if (!dbusersPool) {
+        throw new Error('Pool dbusers não inicializado');
+      }
       const [rows] = await dbusersPool.execute(query, params);
       return rows;
     } catch (error) {
@@ -87,6 +275,9 @@ const executeUsersQuery = async (query, params = [], retries = 3) => {
 const executeCheckinQuery = async (query, params = [], retries = 3) => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      if (!dbcheckinPool) {
+        throw new Error('Pool dbcheckin não inicializado');
+      }
       const [rows] = await dbcheckinPool.execute(query, params);
       return rows;
     } catch (error) {
@@ -100,6 +291,9 @@ const executeCheckinQuery = async (query, params = [], retries = 3) => {
 const executeMercocampQuery = async (query, params = [], retries = 3) => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      if (!dbmercocampPool) {
+        throw new Error('Pool dbmercocamp não inicializado');
+      }
       const [rows] = await dbmercocampPool.execute(query, params);
       return rows;
     } catch (error) {
@@ -110,87 +304,11 @@ const executeMercocampQuery = async (query, params = [], retries = 3) => {
   }
 };
 
-// Função para testar conectividade básica via TCP
-const testTCPConnection = async (host, port, timeout = 30000) => {
-  return new Promise((resolve, reject) => {
-    const net = require('net');
-    const socket = new net.Socket();
-    
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error(`TCP timeout para ${host}:${port} após ${timeout}ms`));
-    }, timeout);
-    
-    socket.on('connect', () => {
-      clearTimeout(timer);
-      socket.destroy();
-      resolve(true);
-    });
-    
-    socket.on('error', (err) => {
-      clearTimeout(timer);
-      socket.destroy();
-      reject(err);
-    });
-    
-    socket.connect(port, host);
-  });
-};
-
-// Função simplificada para testar conectividade sem quebrar pools existentes
-const testConnections = async () => {
-  console.log('🔄 Testando conectividade MySQL...');
-  
-  // Testar diferentes portas TCP primeiro
-  const portsToTest = [dbConfig.port, 3306, 3307];
-  let workingPort = null;
-  
-  for (const port of portsToTest) {
-    try {
-      console.log(`🔌 Testando TCP ${dbConfig.host}:${port}...`);
-      await testTCPConnection(dbConfig.host, port, 30000);
-      console.log(`✅ TCP conectividade estabelecida na porta ${port}`);
-      workingPort = port;
-      break;
-    } catch (error) {
-      console.error(`❌ Falha TCP porta ${port}: ${error.message}`);
-    }
-  }
-  
-  if (!workingPort) {
-    console.error('❌ Nenhuma porta TCP acessível. Confirma bloqueio de rede Render → MySQL.');
-    console.error('💡 Solução: Migrar banco para cloud ou configurar tunnel/proxy');
-    return false;
-  }
-  
-  // Se chegou aqui, TCP funciona mas MySQL pools não conectam
-  // Isso confirma que é problema de configuração MySQL, não rede
-  console.log(`✅ TCP funciona na porta ${workingPort}`);
-  console.log('⚠️ Problema está na configuração MySQL (credenciais, SSL, bind-address, etc.)');
-  
-  // Não modificar pools existentes para evitar "Pool is closed"
-  return false; // Retorna false para não quebrar o retry loop do app.js
-};
-
-// Função para recriar pools com configuração que funciona
-async function recreatePools(workingConfig) {
-  console.log('🔄 Recriando pools com configuração funcional...');
-  
-  // NÃO fechar pools existentes para evitar "Pool is closed"
-  // Simplesmente criar novos e substituir as referências
-  
-  console.log('✅ Mantendo pools existentes para evitar interrupção do serviço');
-  console.log('💡 Configuração funcional identificada - usando nos próximos restarts');
-  
-  // Salvar configuração funcional para próximo restart
-  global.workingDatabaseConfig = workingConfig;
-}
-
 module.exports = {
   // Pools de conexão
-  dbusersPool,
-  dbcheckinPool,
-  dbmercocampPool,
+  get dbusersPool() { return dbusersPool; },
+  get dbcheckinPool() { return dbcheckinPool; },
+  get dbmercocampPool() { return dbmercocampPool; },
   
   // Funções de teste
   testConnections,
@@ -200,8 +318,8 @@ module.exports = {
   executeCheckinQuery,
   executeMercocampQuery,
   
-  // Alias para compatibilidade com código existente
-  pool: dbcheckinPool,
+  // Alias para compatibilidade
+  get pool() { return dbcheckinPool; },
   testConnection: testConnections,
   executeQuery: executeCheckinQuery
 };
