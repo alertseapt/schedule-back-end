@@ -31,8 +31,10 @@ const poolConfig = {
   maxIdle: 2,
   enableKeepAlive: true,
   keepAliveInitialDelay: 30000,
-  // SSL desabilitado para compatibilidade
-  ssl: false
+  // Tentar SSL primeiro, fallback para não-SSL
+  ssl: {
+    rejectUnauthorized: false // Aceita certificados auto-assinados
+  }
 };
 
 // Pools de conexão MySQL para cada banco
