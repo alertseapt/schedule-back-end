@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(diff:*)",
+      "Bash(mv:*)",
+      "Bash(git rm:*)",
+      "WebFetch(domain:github.com)"
+    ],
+    "deny": []
+  }
+}
