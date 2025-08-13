@@ -1,0 +1,61 @@
+services:
+  - type: web
+    name: mercocamp-schedule-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      # Configurações do banco MySQL existente
+      - key: DB_HOST
+        value: mercocamp.ip.odhserver.com
+      - key: DB_PORT
+        value: 33101
+      - key: DB_USER
+        value: projetos
+      - key: DB_PASSWORD
+        value: masterkey
+      # Configurações JWT
+      - key: JWT_SECRET
+        value: mercocamp_schedule_api_jwt_secret_key_2025_super_secure_render_production
+      - key: JWT_EXPIRE
+        value: 7d
+      # Configurações de Rate Limiting
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 300000
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 500
+      # URL do Frontend
+      - key: FRONTEND_URL
+        value: https://recebhomolog.mercocamptech.com.br
+      # Log
+      - key: LOG_LEVEL
+        value: info
+      # Configurações SMTP
+      - key: SMTP_SERVER
+        value: smtp.hostinger.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USE_TLS
+        value: true
+      - key: SMTP_USER
+        value: no-reply@mercocamptech.com.br
+      - key: SMTP_PASSWORD
+        value: Mercocamp.2025
+      - key: SMTP_SENDER_NAME
+        value: Sistema de Agendamentos
+      - key: SMTP_SENDER_EMAIL
+        value: no-reply@mercocamptech.com.br
+      # Configurações Corpem WMS
+      - key: CORPEM_BASE_URL
+        value: http://webcorpem.no-ip.info:37560/scripts/mh.dll/wc
+      - key: CORPEM_CNPJ_WMS
+        value: 27630772000244
+      - key: CORPEM_TOKEN
+        value: 6cnc3
+      - key: CORPEM_TOKEN_HEADER
+        value: TOKEN_CP
