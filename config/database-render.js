@@ -14,28 +14,45 @@ console.log(`   Host: ${dbConfig.host}:${dbConfig.port}`);
 console.log(`   User: ${dbConfig.user}`);
 console.log(`   Password: ***`);
 
-// Configuração otimizada para cloud deployment (apenas opções válidas MySQL2)
-const poolConfig = {
+// Configuração otimizada para cloud deployment - múltiplas tentativas
+const baseConfig = {
   host: dbConfig.host,
   port: dbConfig.port,
   user: dbConfig.user,
   password: dbConfig.password,
   waitForConnections: true,
   charset: 'utf8mb4',
-  // Timeouts válidos para MySQL2
-  connectTimeout: 120000, // 2 minutos para estabelecer conexão
-  // Configurações de pool
-  connectionLimit: 5, // Reduzido para evitar saturação
-  queueLimit: 10,
-  idleTimeout: 300000, // 5 minutos idle
-  maxIdle: 2,
+  // Timeouts mais longos para cloud
+  connectTimeout: 180000, // 3 minutos
+  connectionLimit: 3, // Muito conservador
+  queueLimit: 5,
+  idleTimeout: 300000,
+  maxIdle: 1,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 30000,
-  // Tentar SSL primeiro, fallback para não-SSL
-  ssl: {
-    rejectUnauthorized: false // Aceita certificados auto-assinados
-  }
+  keepAliveInitialDelay: 10000
 };
+
+// Tentar múltiplas configurações
+const configs = [
+  // Config 1: Com SSL
+  {
+    ...baseConfig,
+    ssl: { rejectUnauthorized: false }
+  },
+  // Config 2: Sem SSL (original)
+  {
+    ...baseConfig,
+    ssl: false
+  },
+  // Config 3: Porta padrão MySQL
+  {
+    ...baseConfig,
+    port: 3306,
+    ssl: false
+  }
+];
+
+let poolConfig = configs[0]; // Começar com SSL
 
 // Pools de conexão MySQL para cada banco
 const dbusersPool = mysql.createPool({
@@ -120,73 +137,100 @@ const testTCPConnection = async (host, port, timeout = 30000) => {
   });
 };
 
-// Função aprimorada para testar todas as conexões com retry inteligente
-const testConnections = async (maxRetries = 3) => {
-  console.log('🔄 Testando conexões MySQL com retry inteligente...');
+// Função aprimorada para testar diferentes configurações automaticamente
+const testConnections = async () => {
+  console.log('🔄 Testando conexões MySQL com múltiplas configurações...');
   
-  // Primeiro, testar conectividade TCP básica
-  try {
-    console.log('🔌 Testando conectividade TCP básica...');
-    await testTCPConnection(dbConfig.host, dbConfig.port, 30000);
-    console.log('✅ Conectividade TCP estabelecida');
-  } catch (error) {
-    console.error('❌ Falha na conectividade TCP:', error.message);
-    console.error('⚠️  Possível bloqueio de firewall ou IP não permitido');
+  // Testar diferentes portas TCP primeiro
+  const portsToTest = [dbConfig.port, 3306, 3307];
+  let workingPort = null;
+  
+  for (const port of portsToTest) {
+    try {
+      console.log(`🔌 Testando TCP ${dbConfig.host}:${port}...`);
+      await testTCPConnection(dbConfig.host, port, 30000);
+      console.log(`✅ TCP conectividade estabelecida na porta ${port}`);
+      workingPort = port;
+      break;
+    } catch (error) {
+      console.error(`❌ Falha TCP porta ${port}: ${error.message}`);
+    }
+  }
+  
+  if (!workingPort) {
+    console.error('❌ Nenhuma porta TCP acessível. Possível bloqueio de rede.');
     return false;
   }
   
-  // Testar conexões MySQL com retry exponencial
-  const databases = [
-    { name: 'dbusers', pool: dbusersPool },
-    { name: 'dbcheckin', pool: dbcheckinPool },
-    { name: 'dbmercocamp', pool: dbmercocampPool }
-  ];
+  // Atualizar configurações com a porta que funciona
+  configs.forEach(config => {
+    config.port = workingPort;
+  });
   
-  for (const db of databases) {
-    let lastError = null;
-    let connected = false;
+  // Tentar diferentes configurações MySQL
+  for (let configIndex = 0; configIndex < configs.length; configIndex++) {
+    const config = configs[configIndex];
+    console.log(`🧪 Testando configuração ${configIndex + 1}/${configs.length} (porta: ${config.port}, SSL: ${config.ssl ? 'habilitado' : 'desabilitado'})...`);
     
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Criar pool temporário para teste
+      const testPool = mysql.createPool({
+        ...config,
+        database: 'dbusers' // Testar com um banco
+      });
+      
+      const connection = await Promise.race([
+        testPool.getConnection(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('TIMEOUT_CONFIG_TEST')), 60000)
+        )
+      ]);
+      
+      // Testar query básica
+      await connection.execute('SELECT 1');
+      connection.release();
+      await testPool.end();
+      
+      console.log(`✅ Configuração ${configIndex + 1} funcionou! Recriando pools...`);
+      
+      // Recriar todos os pools com a configuração que funciona
+      await recreatePools(config);
+      
+      console.log('🎉 Todas as conexões MySQL estabelecidas com sucesso!');
+      return true;
+      
+    } catch (error) {
+      console.error(`❌ Configuração ${configIndex + 1} falhou: ${error.message}`);
       try {
-        console.log(`📊 Testando ${db.name} (tentativa ${attempt}/${maxRetries})...`);
-        
-        const connection = await Promise.race([
-          db.pool.getConnection(),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`TIMEOUT_${db.name.toUpperCase()}`)), 120000)
-          )
-        ]);
-        
-        // Testar com query simples
-        await connection.execute('SELECT 1');
-        connection.release();
-        
-        console.log(`✅ ${db.name}: Conectado`);
-        connected = true;
-        break;
-        
-      } catch (error) {
-        lastError = error;
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Backoff exponencial, máx 10s
-        console.error(`❌ ${db.name} (tentativa ${attempt}): ${error.message}`);
-        
-        if (attempt < maxRetries) {
-          console.log(`⏳ Aguardando ${delay}ms antes da próxima tentativa...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-    }
-    
-    if (!connected) {
-      console.error(`❌ Falha definitiva em ${db.name} após ${maxRetries} tentativas`);
-      console.error('   Último erro:', lastError.message);
-      return false;
+        await testPool.end();
+      } catch (e) {}
     }
   }
   
-  console.log('🎉 Todas as conexões MySQL estabelecidas com sucesso!');
-  return true;
+  console.error('❌ Todas as configurações falharam. Problema de conectividade confirmado.');
+  return false;
 };
+
+// Função para recriar pools com configuração que funciona
+async function recreatePools(workingConfig) {
+  console.log('🔄 Recriando pools com configuração funcional...');
+  
+  // Fechar pools existentes
+  try {
+    await dbusersPool.end();
+    await dbcheckinPool.end();
+    await dbmercocampPool.end();
+  } catch (e) {
+    console.log('Pools antigos já fechados ou inexistentes');
+  }
+  
+  // Recriar com configuração funcional
+  global.dbusersPool = mysql.createPool({ ...workingConfig, database: 'dbusers' });
+  global.dbcheckinPool = mysql.createPool({ ...workingConfig, database: 'dbcheckin' });
+  global.dbmercocampPool = mysql.createPool({ ...workingConfig, database: 'dbmercocamp' });
+  
+  console.log('✅ Pools recriados com sucesso!');
+}
 
 module.exports = {
   // Pools de conexão
