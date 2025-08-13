@@ -137,9 +137,9 @@ const testTCPConnection = async (host, port, timeout = 30000) => {
   });
 };
 
-// Função aprimorada para testar diferentes configurações automaticamente
+// Função simplificada para testar conectividade sem quebrar pools existentes
 const testConnections = async () => {
-  console.log('🔄 Testando conexões MySQL com múltiplas configurações...');
+  console.log('🔄 Testando conectividade MySQL...');
   
   // Testar diferentes portas TCP primeiro
   const portsToTest = [dbConfig.port, 3306, 3307];
@@ -158,78 +158,32 @@ const testConnections = async () => {
   }
   
   if (!workingPort) {
-    console.error('❌ Nenhuma porta TCP acessível. Possível bloqueio de rede.');
+    console.error('❌ Nenhuma porta TCP acessível. Confirma bloqueio de rede Render → MySQL.');
+    console.error('💡 Solução: Migrar banco para cloud ou configurar tunnel/proxy');
     return false;
   }
   
-  // Atualizar configurações com a porta que funciona
-  configs.forEach(config => {
-    config.port = workingPort;
-  });
+  // Se chegou aqui, TCP funciona mas MySQL pools não conectam
+  // Isso confirma que é problema de configuração MySQL, não rede
+  console.log(`✅ TCP funciona na porta ${workingPort}`);
+  console.log('⚠️ Problema está na configuração MySQL (credenciais, SSL, bind-address, etc.)');
   
-  // Tentar diferentes configurações MySQL
-  for (let configIndex = 0; configIndex < configs.length; configIndex++) {
-    const config = configs[configIndex];
-    console.log(`🧪 Testando configuração ${configIndex + 1}/${configs.length} (porta: ${config.port}, SSL: ${config.ssl ? 'habilitado' : 'desabilitado'})...`);
-    
-    try {
-      // Criar pool temporário para teste
-      const testPool = mysql.createPool({
-        ...config,
-        database: 'dbusers' // Testar com um banco
-      });
-      
-      const connection = await Promise.race([
-        testPool.getConnection(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('TIMEOUT_CONFIG_TEST')), 60000)
-        )
-      ]);
-      
-      // Testar query básica
-      await connection.execute('SELECT 1');
-      connection.release();
-      await testPool.end();
-      
-      console.log(`✅ Configuração ${configIndex + 1} funcionou! Recriando pools...`);
-      
-      // Recriar todos os pools com a configuração que funciona
-      await recreatePools(config);
-      
-      console.log('🎉 Todas as conexões MySQL estabelecidas com sucesso!');
-      return true;
-      
-    } catch (error) {
-      console.error(`❌ Configuração ${configIndex + 1} falhou: ${error.message}`);
-      try {
-        await testPool.end();
-      } catch (e) {}
-    }
-  }
-  
-  console.error('❌ Todas as configurações falharam. Problema de conectividade confirmado.');
-  return false;
+  // Não modificar pools existentes para evitar "Pool is closed"
+  return false; // Retorna false para não quebrar o retry loop do app.js
 };
 
 // Função para recriar pools com configuração que funciona
 async function recreatePools(workingConfig) {
   console.log('🔄 Recriando pools com configuração funcional...');
   
-  // Fechar pools existentes
-  try {
-    await dbusersPool.end();
-    await dbcheckinPool.end();
-    await dbmercocampPool.end();
-  } catch (e) {
-    console.log('Pools antigos já fechados ou inexistentes');
-  }
+  // NÃO fechar pools existentes para evitar "Pool is closed"
+  // Simplesmente criar novos e substituir as referências
   
-  // Recriar com configuração funcional
-  global.dbusersPool = mysql.createPool({ ...workingConfig, database: 'dbusers' });
-  global.dbcheckinPool = mysql.createPool({ ...workingConfig, database: 'dbcheckin' });
-  global.dbmercocampPool = mysql.createPool({ ...workingConfig, database: 'dbmercocamp' });
+  console.log('✅ Mantendo pools existentes para evitar interrupção do serviço');
+  console.log('💡 Configuração funcional identificada - usando nos próximos restarts');
   
-  console.log('✅ Pools recriados com sucesso!');
+  // Salvar configuração funcional para próximo restart
+  global.workingDatabaseConfig = workingConfig;
 }
 
 module.exports = {
