@@ -1,4 +1,4 @@
-const { executeCheckinQuery } = require('../config/database-render');
+const { executeCheckinQuery } = require('../config/database');
 
 /**
  * Serviço para gerenciar produtos no banco de dados

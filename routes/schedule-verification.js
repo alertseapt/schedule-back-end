@@ -1,5 +1,5 @@
 const express = require('express');
-const { executeCheckinQuery, executeMercocampQuery } = require('../config/database-render');
+const { executeCheckinQuery, executeMercocampQuery } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
 const { triggerProductsIntegration, triggerNfEntryIntegration } = require('./corpem');
 const Joi = require('joi');

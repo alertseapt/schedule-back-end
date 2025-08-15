@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { executeUsersQuery } = require('../config/database-render');
+const { executeUsersQuery } = require('../config/database');
 const { validate, paramSchemas } = require('../middleware/validation');
 const { authenticateToken } = require('../middleware/auth');
 const Joi = require('joi');

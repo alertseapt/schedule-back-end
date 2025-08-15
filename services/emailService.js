@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-const { executeUsersQuery } = require('../config/database-render');
+const { executeUsersQuery } = require('../config/database');
 
 /**
  * Serviço de E-mail baseado no arquivo Python fornecido
@@ -428,7 +428,7 @@ class EmailService {
 
     // Se não temos client_info, tentar buscar informações do estoque na tabela wcl (que sabemos que existe)
     try {
-      const { executeMercocampQuery } = require('../config/database-render');
+      const { executeMercocampQuery } = require('../config/database');
       
       // Limpar CNPJ para busca
       const cleanCnpj = warehouseCnpj ? warehouseCnpj.replace(/\D/g, '') : '';

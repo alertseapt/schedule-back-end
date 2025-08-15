@@ -1,4 +1,4 @@
-const { executeMercocampQuery, executeCheckinQuery } = require('../config/database-render');
+const { executeMercocampQuery, executeCheckinQuery } = require('../config/database');
 
 /**
  * Serviço de Verificação de DP Otimizado
@@ -330,6 +330,180 @@ class DPVerificationServiceOptimized {
   async getDPFromWtrTableWithFallback(nfNumber, cnpj, clientNumber = null) {
     const result = await this.getDPFromWtrTableOptimized(nfNumber, cnpj, clientNumber);
     return result ? result.dp_number : null;
+  }
+
+  /**
+   * Obtém o status do serviço
+   * 
+   * @returns {Object} - Status do serviço
+   */
+  getStatus() {
+    return {
+      isRunning: this.isRunning,
+      interval: this.verificationInterval,
+      statistics: this.getStatistics(),
+      uptime: this.isRunning ? Date.now() - (this.startTime || Date.now()) : 0
+    };
+  }
+
+  /**
+   * Força verificação de um agendamento específico
+   * 
+   * @param {Number} scheduleId - ID do agendamento
+   * @returns {Object} - Resultado da verificação
+   */
+  async forceVerification(scheduleId) {
+    try {
+      console.log(`🔍 [WTR-OPT] Forçando verificação do agendamento ${scheduleId}...`);
+      
+      // Buscar agendamento
+      const schedule = await executeCheckinQuery(
+        'SELECT id, number, client, nfe_key FROM schedule_list WHERE id = ?',
+        [scheduleId]
+      );
+      
+      if (schedule.length === 0) {
+        return {
+          success: false,
+          message: 'Agendamento não encontrado'
+        };
+      }
+      
+      const scheduleData = schedule[0];
+      const nfNumber = scheduleData.number || scheduleData.nfe_key;
+      const clientCnpj = scheduleData.client;
+      
+      if (!nfNumber || !clientCnpj) {
+        return {
+          success: false,
+          message: 'Agendamento sem NF ou CNPJ válidos'
+        };
+      }
+      
+      // Buscar DP
+      const dpResult = await this.getDPFromWtrTableOptimized(nfNumber, clientCnpj);
+      
+      if (dpResult) {
+        // Atualizar agendamento
+        await executeCheckinQuery(
+          'UPDATE schedule_list SET no_dp = ? WHERE id = ?',
+          [dpResult.dp_number, scheduleId]
+        );
+        
+        return {
+          success: true,
+          message: `DP ${dpResult.dp_number} encontrado e atribuído`,
+          dpNumber: dpResult.dp_number,
+          scheduleId: scheduleId
+        };
+      } else {
+        return {
+          success: false,
+          message: 'DP não encontrado para este agendamento'
+        };
+      }
+      
+    } catch (error) {
+      console.error('❌ [WTR-OPT] Erro na verificação forçada:', error);
+      return {
+        success: false,
+        message: 'Erro interno na verificação',
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Executa verificação manual de todos os agendamentos sem DP
+   * 
+   * @returns {Object} - Resultado da verificação
+   */
+  async runVerification() {
+    try {
+      console.log('🔍 [WTR-OPT] Iniciando verificação manual...');
+      
+      const schedules = await this.getSchedulesWithoutDP();
+      
+      if (schedules.length === 0) {
+        console.log('ℹ️ [WTR-OPT] Nenhum agendamento sem DP encontrado');
+        return {
+          success: true,
+          message: 'Nenhum agendamento sem DP encontrado',
+          processed: 0,
+          updated: 0
+        };
+      }
+      
+      console.log(`📋 [WTR-OPT] Processando ${schedules.length} agendamentos...`);
+      
+      let processed = 0;
+      let updated = 0;
+      
+      for (const schedule of schedules) {
+        try {
+          const nfNumber = schedule.number || schedule.nfe_key;
+          const clientCnpj = schedule.client;
+          
+          if (nfNumber && clientCnpj) {
+            const dpResult = await this.getDPFromWtrTableOptimized(nfNumber, clientCnpj);
+            
+            if (dpResult) {
+              await executeCheckinQuery(
+                'UPDATE schedule_list SET no_dp = ? WHERE id = ?',
+                [dpResult.dp_number, schedule.id]
+              );
+              updated++;
+              console.log(`✅ [WTR-OPT] DP ${dpResult.dp_number} atribuído ao agendamento ${schedule.id}`);
+            }
+          }
+          
+          processed++;
+          
+        } catch (error) {
+          console.error(`❌ [WTR-OPT] Erro ao processar agendamento ${schedule.id}:`, error);
+        }
+      }
+      
+      console.log(`✅ [WTR-OPT] Verificação manual concluída: ${processed} processados, ${updated} atualizados`);
+      
+      return {
+        success: true,
+        message: `Verificação manual concluída: ${processed} processados, ${updated} atualizados`,
+        processed,
+        updated
+      };
+      
+    } catch (error) {
+      console.error('❌ [WTR-OPT] Erro na verificação manual:', error);
+      return {
+        success: false,
+        message: 'Erro interno na verificação manual',
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Busca agendamentos sem DP atribuído
+   * 
+   * @returns {Array} - Lista de agendamentos sem DP
+   */
+  async getSchedulesWithoutDP() {
+    try {
+      console.log('🔍 [WTR-OPT] Buscando agendamentos sem DP...');
+      
+      const schedules = await executeCheckinQuery(
+        'SELECT id, number, client, nfe_key, status FROM schedule_list WHERE no_dp IS NULL OR no_dp = ""'
+      );
+      
+      console.log(`📋 [WTR-OPT] Encontrados ${schedules.length} agendamentos sem DP`);
+      
+      return schedules;
+      
+    } catch (error) {
+      console.error('❌ [WTR-OPT] Erro ao buscar agendamentos sem DP:', error);
+      return [];
+    }
   }
 }
 

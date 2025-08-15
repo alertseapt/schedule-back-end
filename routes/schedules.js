@@ -1,12 +1,11 @@
 const express = require('express');
-const { executeCheckinQuery, executeUsersQuery, executeMercocampQuery } = require('../config/database-render');
+const { executeCheckinQuery, executeUsersQuery, executeMercocampQuery } = require('../config/database');
 const { validate, paramSchemas, nfeSchemas, validateCNPJ, formatCNPJ } = require('../middleware/validation');
 const { authenticateToken, requireAdmin, requireManager, requireClientAccess, checkClientAccess } = require('../middleware/auth');
 const emailService = require('../services/emailService');
 const { triggerProductsIntegration, triggerNfEntryIntegration } = require('./corpem');
 const productService = require('../services/productService');
 const DPVerificationServiceOptimized = require('../services/dpVerificationServiceOptimized');
-const DPVerificationServiceWithDate = require('../services/dpVerificationServiceWithDate');
 const multer = require('multer');
 const xml2js = require('xml2js');
 const Joi = require('joi');
@@ -1290,7 +1289,7 @@ router.patch('/:id/status', validate(paramSchemas.id, 'params'), validate(schedu
       
       // 2. Buscar DP na tabela WTR
       try {
-        const dpService = new DPVerificationServiceWithDate();
+        const dpService = new DPVerificationServiceOptimized();
         const nfNumber = updatedSchedule.number || updatedSchedule.nfe_key;
         const clientCnpj = updatedSchedule.client;
         let clientNumber = null;

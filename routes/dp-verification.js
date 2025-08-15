@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
-const dpVerificationService = require('../services/dpVerificationService');
+const DPVerificationServiceOptimized = require('../services/dpVerificationServiceOptimized');
 
 const router = express.Router();
 
@@ -13,12 +13,13 @@ router.use(requireAdmin);
  */
 router.post('/start', async (req, res) => {
   try {
-    dpVerificationService.start();
+    const dpService = new DPVerificationServiceOptimized();
+    dpService.start();
     
     res.json({
       success: true,
       message: 'Serviço de verificação de DP iniciado com sucesso',
-      status: dpVerificationService.getStatus()
+      status: dpService.getStatus()
     });
   } catch (error) {
     console.error('Erro ao iniciar serviço de verificação de DP:', error);
@@ -35,12 +36,13 @@ router.post('/start', async (req, res) => {
  */
 router.post('/stop', async (req, res) => {
   try {
-    dpVerificationService.stop();
+    const dpService = new DPVerificationServiceOptimized();
+    dpService.stop();
     
     res.json({
       success: true,
       message: 'Serviço de verificação de DP parado com sucesso',
-      status: dpVerificationService.getStatus()
+      status: dpService.getStatus()
     });
   } catch (error) {
     console.error('Erro ao parar serviço de verificação de DP:', error);
@@ -57,7 +59,8 @@ router.post('/stop', async (req, res) => {
  */
 router.get('/status', async (req, res) => {
   try {
-    const status = dpVerificationService.getStatus();
+    const dpService = new DPVerificationServiceOptimized();
+    const status = dpService.getStatus();
     
     res.json({
       success: true,
@@ -87,7 +90,8 @@ router.post('/verify/:scheduleId', async (req, res) => {
       });
     }
 
-    const result = await dpVerificationService.forceVerification(parseInt(scheduleId));
+    const dpService = new DPVerificationServiceOptimized();
+    const result = await dpService.forceVerification(parseInt(scheduleId));
     
     if (result.success) {
       res.json({
@@ -119,7 +123,8 @@ router.post('/verify/:scheduleId', async (req, res) => {
 router.post('/run-verification', async (req, res) => {
   try {
     // Executar verificação de forma assíncrona para não bloquear a resposta
-    dpVerificationService.runVerification().then(() => {
+    const dpService = new DPVerificationServiceOptimized();
+    dpService.runVerification().then(() => {
       console.log('✅ Verificação manual completa executada');
     }).catch(error => {
       console.error('❌ Erro na verificação manual completa:', error);
@@ -155,58 +160,53 @@ router.get('/search-dp-triangulation', async (req, res) => {
       });
     }
 
-    // Usar serviço de triangulação rigorosa
-    const DPVerificationServiceWithDate = require('../services/dpVerificationServiceWithDate');
-    const dpService = new DPVerificationServiceWithDate();
+    // Usar serviço otimizado para buscar na tabela WTR
+    const DPVerificationServiceOptimized = require('../services/dpVerificationServiceOptimized');
+    const dpService = new DPVerificationServiceOptimized();
     
     console.log(`🔍 [API-TRIANGULATION] Buscando DP com triangulação rigorosa`);
     console.log(`   NF: ${nf_number}, CNPJ: ${client_cnpj}, Schedule ID: ${schedule_id}`);
     
-    const dpResult = await dpService.getDPFromWtrTableWithTriangulation(
+    const dpResult = await dpService.getDPFromWtrTableOptimized(
       nf_number, 
       client_cnpj, 
-      parseInt(schedule_id)
+      null
     );
     
-    if (dpResult && dpResult.triangulation_complete) {
-      console.log(`✅ [API-TRIANGULATION] DP encontrado com triangulação válida: ${dpResult.dp_number}`);
+    if (dpResult) {
+      console.log(`✅ [API-TRIANGULATION] DP encontrado: ${dpResult.dp_number}`);
       
       res.json({
         success: true,
-        message: 'DP encontrado com triangulação válida (CNPJ + NF + Data)',
+        message: 'DP encontrado na tabela WTR',
         no_dp: dpResult.dp_number,
         nf_number,
         client_cnpj,
         schedule_id: parseInt(schedule_id),
         triangulation_complete: true,
-        date_validated: dpResult.date_validated,
-        date_match: dpResult.date_match,
         strategy_used: dpResult.strategy_used,
         found_at: dpResult.found_at,
         details: {
           cnpj_in_record: dpResult.cnpj,
           client_in_record: dpResult.client_number,
-          nf_in_record: dpResult.nf_number,
-          dt_inclusao: dpResult.dt_inclusao,
-          situacao: dpResult.situacao
+          nf_in_record: dpResult.nf_number
         }
       });
     } else {
-      console.log(`❌ [API-TRIANGULATION] Triangulação falhou - NF: ${nf_number}, CNPJ: ${client_cnpj}`);
+      console.log(`❌ [API-TRIANGULATION] DP não encontrado - NF: ${nf_number}, CNPJ: ${client_cnpj}`);
       
       res.status(404).json({
         success: false,
-        message: 'DP não encontrado - triangulação falhou',
-        reason: 'Sem correspondência exata de CNPJ + NF + Data de inclusão',
+        message: 'DP não encontrado na tabela WTR',
+        reason: 'Sem correspondência de CNPJ + NF',
         nf_number,
         client_cnpj,
         schedule_id: parseInt(schedule_id),
         triangulation_complete: false,
         suggestions: [
-          'Verifique se a data de alteração para "Agendado" está no histórico',
           'Confirme se o CNPJ está correto',
           'Verifique se a NF está correta',
-          'Confirme se existe registro na tabela WTR com data de inclusão correspondente'
+          'Confirme se existe registro na tabela WTR'
         ]
       });
     }
@@ -307,8 +307,8 @@ router.post('/test-triangulation', async (req, res) => {
     console.log(`   NF: ${nf_number}, CNPJ: ${client_cnpj}, Schedule ID: ${schedule_id || 'N/A'}`);
     console.log(`   Modo teste: ${test_mode}`);
 
-    const DPVerificationServiceWithDate = require('../services/dpVerificationServiceWithDate');
-    const dpService = new DPVerificationServiceWithDate();
+    const DPVerificationServiceOptimized = require('../services/dpVerificationServiceOptimized');
+    const dpService = new DPVerificationServiceOptimized();
     
     let testResults = {
       triangulation_test: null,
@@ -319,10 +319,10 @@ router.post('/test-triangulation', async (req, res) => {
     // Teste 1: Triangulação rigorosa
     if (schedule_id) {
       console.log(`🔍 [TEST] Testando triangulação rigorosa...`);
-      testResults.triangulation_test = await dpService.getDPFromWtrTableWithTriangulation(
+      testResults.triangulation_test = await dpService.getDPFromWtrTableOptimized(
         nf_number, 
         client_cnpj, 
-        parseInt(schedule_id)
+        null
       );
     }
 
@@ -384,7 +384,8 @@ router.post('/test-triangulation', async (req, res) => {
  */
 router.get('/schedules-without-dp', async (req, res) => {
   try {
-    const schedules = await dpVerificationService.getSchedulesWithoutDP();
+    const dpService = new DPVerificationServiceOptimized();
+    const schedules = await dpService.getSchedulesWithoutDP();
     
     res.json({
       success: true,

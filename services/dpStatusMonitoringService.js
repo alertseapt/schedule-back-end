@@ -1,4 +1,4 @@
-const { executeCheckinQuery, executeMercocampQuery } = require('../config/database-render');
+const { executeCheckinQuery, executeMercocampQuery } = require('../config/database');
 
 /**
  * Serviço de Monitoramento de Status de DP

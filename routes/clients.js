@@ -1,5 +1,5 @@
 const express = require('express');
-const { executeMercocampQuery } = require('../config/database-render');
+const { executeMercocampQuery } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();

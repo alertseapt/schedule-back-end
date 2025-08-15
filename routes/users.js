@@ -1,5 +1,5 @@
 const express = require('express');
-const { executeUsersQuery } = require('../config/database-render');
+const { executeUsersQuery } = require('../config/database');
 const { validate, paramSchemas } = require('../middleware/validation');
 const { authenticateToken, requireAdmin, requireManager, requireOwnershipOrAdmin } = require('../middleware/auth');
 const Joi = require('joi');

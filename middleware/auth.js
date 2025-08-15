@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { executeUsersQuery } = require('../config/database-render');
+const { executeUsersQuery } = require('../config/database');
 
 // Middleware para verificar token JWT
 const authenticateToken = async (req, res, next) => {

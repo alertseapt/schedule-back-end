@@ -38,7 +38,7 @@ router.post('/retry/:scheduleId', requireAdmin, async (req, res) => {
     const { scheduleId } = req.params;
     
     // Buscar dados do agendamento
-    const { executeCheckinQuery } = require('../config/database-render');
+    const { executeCheckinQuery } = require('../config/database');
     const schedules = await executeCheckinQuery(
       'SELECT * FROM schedule_list WHERE id = ?',
       [scheduleId]

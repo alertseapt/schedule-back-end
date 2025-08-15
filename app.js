@@ -3,8 +3,27 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
-const { testConnections } = require('./config/database-render');
+const { testConnections } = require('./config/database');
 require('dotenv').config();
+
+// Detectar ambiente e carregar configuração apropriada
+let config;
+if (process.env.NODE_ENV === 'production') {
+  config = require('./config/production');
+} else {
+  // Configuração padrão para desenvolvimento
+  config = {
+    cors: {
+      allowedOrigins: [
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'null',
+        'https://schedule-mercocamp-front-end2.vercel.app',
+        'https://recebhomolog.mercocamptech.com.br'
+      ]
+    }
+  };
+}
 
 const app = express();
 
@@ -12,13 +31,7 @@ const app = express();
 app.use(helmet());
 
 // Configuração do CORS para múltiplas origens
-const allowedOrigins = [
-  'http://localhost:8000',
-  'http://127.0.0.1:8000',
-  'null',
-  'https://schedule-mercocamp-front-end2.vercel.app',
-  'https://recebhomolog.mercocamptech.com.br'
-];
+const allowedOrigins = config.cors.allowedOrigins;
 
 const corsOptions = {
   origin: function (origin, callback) {
@@ -156,7 +169,7 @@ app.get('/api/test-connectivity', async (req, res) => {
   socket.on('timeout', () => {
     result.error = `Connection timeout após 30 segundos`;
     result.duration = Date.now() - start;
-    result.recommendation = 'Possível bloqueio de firewall ou IP do Render não permitido';
+          result.recommendation = 'Possível bloqueio de firewall ou IP do Railway não permitido';
     socket.destroy();
     res.json(result);
   });
@@ -172,8 +185,8 @@ app.get('/api/test-connectivity', async (req, res) => {
   socket.connect(port, host);
 });
 
-// Rota para descobrir IP do Render que precisa ser whitelistado
-app.get('/api/render-ip', async (req, res) => {
+// Rota para descobrir IP do Railway que precisa ser whitelistado
+app.get('/api/railway-ip', async (req, res) => {
   try {
     // Buscar IP externo usando múltiplos serviços
     const axios = require('axios');
@@ -192,10 +205,10 @@ app.get('/api/render-ip', async (req, res) => {
     }
     
     res.json({
-      message: 'IP do Render para whitelist no firewall do MySQL',
+      message: 'IP do Railway para whitelist no firewall do MySQL',
       timestamp: new Date().toISOString(),
       server: {
-        renderIP: externalIP,
+        railwayIP: externalIP,
         requestIP: req.ip,
         xForwardedFor: req.get('X-Forwarded-For'),
         xRealIP: req.get('X-Real-IP'),
@@ -209,9 +222,9 @@ app.get('/api/render-ip', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Erro ao obter IP do Render:', error);
+    console.error('Erro ao obter IP do Railway:', error);
     res.status(500).json({
-      error: 'Erro ao determinar IP do Render',
+      error: 'Erro ao determinar IP do Railway',
       details: error.message
     });
   }
@@ -382,8 +395,8 @@ async function startServer() {
       console.log(`📡 Porta: ${PORT}`);
       console.log(`🌐 Ambiente: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🗄️ Database: ${isDatabaseConnected ? '✅ Conectado' : '⚠️ Desconectado (retry em background)'}`);
-      console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
-      console.log(`📚 Documentação: http://localhost:${PORT}/api/info`);
+      console.log(`🏥 Health Check: /api/health`);
+      console.log(`📚 Documentação: /api/info`);
       console.log('\n📋 Estrutura dos bancos de dados:');
       console.log('   📊 dbusers.users: Sistema de usuários com níveis de acesso');
       console.log('   📊 dbcheckin.products: Relacionamentos cliente-fornecedor');

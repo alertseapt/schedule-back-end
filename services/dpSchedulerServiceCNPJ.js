@@ -1,4 +1,4 @@
-const { executeMercocampQuery, executeCheckinQuery } = require('../config/database-render');
+const { executeMercocampQuery, executeCheckinQuery } = require('../config/database');
 
 /**
  * Serviço de Agendamento de DP usando CNPJ

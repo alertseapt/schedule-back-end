@@ -1,5 +1,5 @@
 const express = require('express');
-const { executeCheckinQuery } = require('../config/database-render');
+const { executeCheckinQuery } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const corpemService = require('../services/corpemIntegration');
 const Joi = require('joi');

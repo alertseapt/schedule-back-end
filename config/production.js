@@ -1,4 +1,4 @@
-// Configuração de produção para o Railway/ODH Server
+// Configuração de produção para o Railway
 // Este arquivo contém as configurações hardcoded para produção
 
 module.exports = {
@@ -19,6 +19,7 @@ module.exports = {
   server: {
     port: process.env.PORT || 4000,
     environment: 'production'
+    // Railway gerencia automaticamente o binding do host
   },
   
   // Configurações JWT
@@ -37,8 +38,10 @@ module.exports = {
   cors: {
     allowedOrigins: [
       'https://schedule-mercocamp-front-end2.vercel.app',
-      'https://recebhomolog.mercocamptech.com.br'
-    ]
+      'https://recebhomolog.mercocamptech.com.br',
+      // Adicionar outros domínios front-end conforme necessário
+      process.env.FRONTEND_URL
+    ].filter(Boolean)
   },
   
   // Configurações do Corpem WMS

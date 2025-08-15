@@ -1,5 +1,5 @@
 const express = require('express');
-const { executeUsersQuery } = require('../config/database-render');
+const { executeUsersQuery } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
 const emailService = require('../services/emailService');
 const Joi = require('joi');
