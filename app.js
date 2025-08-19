@@ -19,7 +19,8 @@ if (process.env.NODE_ENV === 'production') {
         'http://127.0.0.1:8000',
         'null',
         'https://schedule-mercocamp-front-end2.vercel.app',
-        'https://recebhomolog.mercocamptech.com.br'
+        'https://recebhomolog.mercocamptech.com.br',
+        'http://recebhomolog.mercocamptech.com.br'  // Adicionado HTTP
       ]
     }
   };
@@ -391,12 +392,51 @@ async function startServer() {
     
     // Iniciar servidor
     const server = app.listen(PORT, () => {
-      console.log('\n🚀 Servidor iniciado com sucesso!');
-      console.log(`📡 Porta: ${PORT}`);
+      // Obter IPs do servidor
+      const networkInterfaces = require('os').networkInterfaces();
+      const ipAddresses = [];
+      
+      Object.keys(networkInterfaces).forEach((ifname) => {
+        networkInterfaces[ifname].forEach((iface) => {
+          // Ignorar endereços IPv6 e loopback (127.0.0.1)
+          if (iface.family === 'IPv4' && !iface.internal) {
+            ipAddresses.push(iface.address);
+          }
+        });
+      });
+      
+      // Exibir informações do servidor
+      console.log('\n============================================================');
+      console.log('🚀 SERVIDOR BACKEND INICIADO COM SUCESSO');
+      console.log('============================================================');
+      
+      console.log(`\n📡 Porta: ${PORT}`);
       console.log(`🌐 Ambiente: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🗄️ Database: ${isDatabaseConnected ? '✅ Conectado' : '⚠️ Desconectado (retry em background)'}`);
-      console.log(`🏥 Health Check: /api/health`);
-      console.log(`📚 Documentação: /api/info`);
+      
+      // Exibir URLs exatas de acesso à API
+      console.log('\n📍 ENDPOINTS DA API:');
+      if (ipAddresses.length > 0) {
+        ipAddresses.forEach(ip => {
+          console.log(`   ✅ http://${ip}:${PORT}/api`);
+        });
+      }
+      console.log(`   ✅ http://localhost:${PORT}/api`);
+      console.log(`   ✅ http://127.0.0.1:${PORT}/api`);
+      
+      // Exibir URLs para teste (CORS)
+      console.log('\n🔒 CONFIGURAÇÃO CORS:');
+      console.log('   Origens permitidas:');
+      allowedOrigins.forEach(origin => {
+        console.log(`   ✓ ${origin}`);
+      });
+      
+      // URLs comuns
+      console.log('\n🔍 ENDPOINTS PRINCIPAIS:');
+      console.log(`   🏥 Health Check: http://localhost:${PORT}/api/health`);
+      console.log(`   📚 Documentação: http://localhost:${PORT}/api/info`);
+      console.log(`   🔑 Login: http://localhost:${PORT}/api/auth/login`);
+      
       console.log('\n📋 Estrutura dos bancos de dados:');
       console.log('   📊 dbusers.users: Sistema de usuários com níveis de acesso');
       console.log('   📊 dbcheckin.products: Relacionamentos cliente-fornecedor');
