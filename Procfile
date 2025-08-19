@@ -1,1 +1,1 @@
-web: NODE_ENV=production node start-railway.js
+web: gunicorn wsgi:application
