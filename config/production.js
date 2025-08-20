@@ -42,8 +42,11 @@ module.exports = {
       'http://recebimento.mercocamptech.com.br',  // HTTP version
       'http://recebimento.mercocamptech.com.br:80',
       'http://recebimento.mercocamptech.com.br:443',
+      'http://recebimento.mercocamptech.com.br/',  // Com trailing slash
+      'https://recebimento.mercocamptech.com.br/',  // HTTPS com trailing slash
       // Adicionar outros domínios front-end conforme necessário
-      process.env.FRONTEND_URL
+      process.env.FRONTEND_URL,
+      process.env.ALLOWED_ORIGINS
     ].filter(Boolean)
   },
   

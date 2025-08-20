@@ -7,10 +7,15 @@ const { testConnections } = require('./config/database');
 require('dotenv').config();
 
 // Detectar ambiente e carregar configuração apropriada
+console.log(`=== CARREGANDO CONFIGURAÇÃO ===`);
+console.log(`NODE_ENV: "${process.env.NODE_ENV}"`);
+
 let config;
 if (process.env.NODE_ENV === 'production') {
+  console.log(`✅ Carregando configuração de PRODUÇÃO`);
   config = require('./config/production');
 } else {
+  console.log(`✅ Carregando configuração de DESENVOLVIMENTO`);
   // Configuração padrão para desenvolvimento
   config = {
     cors: {
@@ -27,6 +32,9 @@ if (process.env.NODE_ENV === 'production') {
     }
   };
 }
+
+console.log(`Configuração CORS carregada:`, config.cors.allowedOrigins);
+console.log(`================================\n`);
 
 const app = express();
 
