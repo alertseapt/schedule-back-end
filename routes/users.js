@@ -322,7 +322,16 @@ router.put('/profile/me', (req, res, next) => {
       }
 
       // Validar senha atual
+      console.log(`=== VALIDAÇÃO DE SENHA ATUAL ===`);
+      console.log(`User ID: ${req.user.id}`);
+      console.log(`Senha atual recebida: "${currentPassword}"`);
+      console.log(`Hash no banco: "${users[0].password}"`);
+      
       const isCurrentPasswordValid = await bcrypt.compare(currentPassword, users[0].password);
+      
+      console.log(`Resultado da comparação: ${isCurrentPasswordValid}`);
+      console.log(`===============================`);
+      
       if (!isCurrentPasswordValid) {
         return res.status(401).json({
           error: 'Senha atual incorreta'
