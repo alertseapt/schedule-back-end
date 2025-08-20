@@ -31,7 +31,7 @@
     "DB_NAME_USERS": "dbusers",
     "DB_NAME_CHECKIN": "dbcheckin",
     "DB_NAME_MERCOCAMP": "dbmercocamp",
-    "ALLOWED_ORIGINS": "https://recebhomolog.mercocamptech.com.br,http://recebhomolog.mercocamptech.com.br"
+    "ALLOWED_ORIGINS": "https://recebimento.mercocamptech.com.br,http://recebimento.mercocamptech.com.br"
   },
   "functions": {
     "app.js": {

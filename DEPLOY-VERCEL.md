@@ -125,8 +125,8 @@ CORPEM_TOKEN=6cnc3
 CORPEM_TOKEN_HEADER=TOKEN_CP
 
 # Frontend URL
-FRONTEND_URL=https://recebhomolog.mercocamptech.com.br
-ALLOWED_ORIGINS=https://recebhomolog.mercocamptech.com.br,https://schedule-mercocamp-front-end2.vercel.app
+FRONTEND_URL=https://recebimento.mercocamptech.com.br
+ALLOWED_ORIGINS=https://recebimento.mercocamptech.com.br,https://schedule-mercocamp-front-end2.vercel.app
 ```
 
 4. Clique em **Save** para cada variável

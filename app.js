@@ -19,10 +19,10 @@ if (process.env.NODE_ENV === 'production') {
         'http://127.0.0.1:8000',
         'null',
         'https://schedule-mercocamp-front-end2.vercel.app',
-        'https://recebhomolog.mercocamptech.com.br',
-        'http://recebhomolog.mercocamptech.com.br',  // Adicionado HTTP
-        'http://recebhomolog.mercocamptech.com.br:80',  // Com porta explícita
-        'http://recebhomolog.mercocamptech.com.br:443'  // Para casos de proxy reverso
+        'https://recebimento.mercocamptech.com.br',
+        'http://recebimento.mercocamptech.com.br',  // Adicionado HTTP
+        'http://recebimento.mercocamptech.com.br:80',  // Com porta explícita
+        'http://recebimento.mercocamptech.com.br:443'  // Para casos de proxy reverso
       ]
     }
   };

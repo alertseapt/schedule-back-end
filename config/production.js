@@ -38,10 +38,10 @@ module.exports = {
   cors: {
     allowedOrigins: [
       'https://schedule-mercocamp-front-end2.vercel.app',
-      'https://recebhomolog.mercocamptech.com.br',
-      'http://recebhomolog.mercocamptech.com.br',  // HTTP version
-      'http://recebhomolog.mercocamptech.com.br:80',
-      'http://recebhomolog.mercocamptech.com.br:443',
+      'https://recebimento.mercocamptech.com.br',
+      'http://recebimento.mercocamptech.com.br',  // HTTP version
+      'http://recebimento.mercocamptech.com.br:80',
+      'http://recebimento.mercocamptech.com.br:443',
       // Adicionar outros domínios front-end conforme necessário
       process.env.FRONTEND_URL
     ].filter(Boolean)
