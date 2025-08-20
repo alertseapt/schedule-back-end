@@ -39,6 +39,9 @@ module.exports = {
     allowedOrigins: [
       'https://schedule-mercocamp-front-end2.vercel.app',
       'https://recebhomolog.mercocamptech.com.br',
+      'http://recebhomolog.mercocamptech.com.br',  // HTTP version
+      'http://recebhomolog.mercocamptech.com.br:80',
+      'http://recebhomolog.mercocamptech.com.br:443',
       // Adicionar outros domínios front-end conforme necessário
       process.env.FRONTEND_URL
     ].filter(Boolean)

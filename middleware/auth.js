@@ -7,14 +7,13 @@ const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    // Log temporário para debug de alteração de senha
-    if (req.path === '/profile/me' && req.method === 'PUT') {
-      console.log('🔐 DEBUG: Tentativa de alteração de senha');
-      console.log('🔑 Authorization header:', authHeader ? authHeader.substring(0, 30) + '...' : 'não encontrado');
-      console.log('🎫 Token extraído:', token ? token.substring(0, 20) + '...' : 'não encontrado');
-    }
+    console.log('\n🔐 === MIDDLEWARE DE AUTENTICAÇÃO ===');
+    console.log(`📍 Endpoint: ${req.method} ${req.originalUrl}`);
+    console.log(`🔑 Authorization header: ${authHeader ? 'Bearer ***' + authHeader.slice(-20) : 'AUSENTE'}`);
+    console.log(`🎫 Token extraído: ${token ? '***' + token.slice(-20) : 'AUSENTE'}`);
 
     if (!token) {
+      console.log('❌ TOKEN AUSENTE - Retornando 401');
       return res.status(401).json({
         error: 'Token de acesso requerido'
       });
@@ -22,10 +21,10 @@ const authenticateToken = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // Log temporário para debug
-    if (req.path === '/profile/me' && req.method === 'PUT') {
-      console.log('✅ Token JWT verificado com sucesso. User ID:', decoded.userId);
-    }
+    console.log('✅ TOKEN JWT VERIFICADO COM SUCESSO');
+    console.log(`👤 User ID: ${decoded.userId}`);
+    console.log(`👤 Username: ${decoded.user}`);
+    console.log(`🔢 Level Access: ${decoded.level_access}`);
     
     // Tentar verificar se o usuário ainda existe no banco dbusers
     // Se falhar por problemas de conectividade, usar dados do token como fallback
@@ -38,14 +37,16 @@ const authenticateToken = async (req, res, next) => {
       );
 
       if (users.length === 0) {
+        console.log('❌ USUÁRIO NÃO ENCONTRADO NO BANCO - Retornando 401');
         return res.status(401).json({
           error: 'Usuário não encontrado'
         });
       }
 
       userData = users[0];
+      console.log('✅ USUÁRIO ENCONTRADO NO BANCO:', { id: userData.id, user: userData.user, level_access: userData.level_access });
     } catch (dbError) {
-      console.warn('Problema de conectividade com dbusers, usando dados do token como fallback:', dbError.message);
+      console.warn('⚠️ PROBLEMA DE CONECTIVIDADE COM DBUSERS, usando dados do token como fallback:', dbError.message);
       
       // Fallback: usar dados básicos do token quando há problemas de conectividade
       // Isso permite que o sistema continue funcionando durante problemas de rede
@@ -78,25 +79,35 @@ const authenticateToken = async (req, res, next) => {
       hasAccessTo: {}
     };
     
-    // Log temporário para debug
-    if (req.path === '/profile/me' && req.method === 'PUT') {
-      console.log('👤 req.user definido:', { id: req.user.id, user: req.user.user, level_access: req.user.level_access });
-    }
+    console.log('✅ AUTENTICAÇÃO CONCLUÍDA COM SUCESSO');
+    console.log(`🎯 req.user definido:`, { 
+      id: req.user.id, 
+      user: req.user.user, 
+      level_access: req.user.level_access,
+      hasFullAccess: req.user._clientAccessCache.hasFullAccess
+    });
+    console.log('🔐 === FIM DO MIDDLEWARE DE AUTENTICAÇÃO ===\n');
     
     next();
   } catch (error) {
+    console.log('❌ ERRO NO MIDDLEWARE DE AUTENTICAÇÃO:');
+    console.log('Tipo do erro:', error.name);
+    console.log('Mensagem:', error.message);
+    
     if (error.name === 'JsonWebTokenError') {
+      console.log('🚫 TOKEN INVÁLIDO - Retornando 401');
       return res.status(401).json({
         error: 'Token inválido'
       });
     }
     if (error.name === 'TokenExpiredError') {
+      console.log('⏰ TOKEN EXPIRADO - Retornando 401');
       return res.status(401).json({
         error: 'Token expirado'
       });
     }
     
-    console.error('Erro na autenticação:', error);
+    console.error('💥 ERRO INTERNO NA AUTENTICAÇÃO:', error);
     res.status(500).json({
       error: 'Erro interno do servidor'
     });

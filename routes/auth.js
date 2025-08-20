@@ -29,13 +29,20 @@ router.post('/login', validate(authSchemas.login), async (req, res) => {
   try {
     const { user, password } = req.body;
 
+    console.log('\n🔑 === TENTATIVA DE LOGIN ===');
+    console.log(`👤 Usuário: ${user}`);
+    console.log(`🔒 Senha: ***${password.slice(-3)}`);
+
     // Buscar usuário no banco dbusers
     const users = await executeUsersQuery(
       'SELECT id, user, password, name, level_access, cli_access FROM users WHERE user = ?',
       [user]
     );
 
+    console.log(`🔍 Usuários encontrados no banco: ${users.length}`);
+
     if (users.length === 0) {
+      console.log('❌ USUÁRIO NÃO ENCONTRADO - Login falhou');
       return res.status(401).json({
         error: 'Usuário ou senha inválidos'
       });
@@ -74,6 +81,15 @@ router.post('/login', validate(authSchemas.login), async (req, res) => {
       { expiresIn: process.env.JWT_EXPIRE || '7d' }
     );
 
+    console.log('✅ LOGIN BEM-SUCEDIDO');
+    console.log(`🎫 Token JWT gerado (últimos 20 chars): ***${token.slice(-20)}`);
+    console.log(`👤 Dados do usuário:`, {
+      id: userData.id,
+      user: userData.user,
+      name: userData.name,
+      level_access: userData.level_access
+    });
+
     // Preparar resposta base
     const response = {
       message: 'Login realizado com sucesso',
@@ -93,8 +109,11 @@ router.post('/login', validate(authSchemas.login), async (req, res) => {
     if (userData.level_access === 9) {
       response.redirect = '/schedule-verification';
       response.message = 'Login realizado com sucesso. Redirecionando para página de verificação de agendamentos.';
+      console.log('🔀 USUÁRIO NÍVEL 9 - Redirecionamento para schedule-verification');
     }
 
+    console.log('📤 ENVIANDO RESPOSTA DE LOGIN');
+    console.log('🔑 === FIM DO PROCESSO DE LOGIN ===\n');
     res.json(response);
 
   } catch (error) {

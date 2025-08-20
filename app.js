@@ -20,13 +20,19 @@ if (process.env.NODE_ENV === 'production') {
         'null',
         'https://schedule-mercocamp-front-end2.vercel.app',
         'https://recebhomolog.mercocamptech.com.br',
-        'http://recebhomolog.mercocamptech.com.br'  // Adicionado HTTP
+        'http://recebhomolog.mercocamptech.com.br',  // Adicionado HTTP
+        'http://recebhomolog.mercocamptech.com.br:80',  // Com porta explícita
+        'http://recebhomolog.mercocamptech.com.br:443'  // Para casos de proxy reverso
       ]
     }
   };
 }
 
 const app = express();
+
+// Configurar trust proxy para IIS/proxy reverso
+// Isso é necessário para o express-rate-limit funcionar corretamente com headers X-Forwarded-For
+app.set('trust proxy', 1);
 
 // Configurações de segurança
 app.use(helmet());
@@ -62,6 +68,11 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Função personalizada para gerar chave considerando proxy
+  keyGenerator: (req) => {
+    // Usar X-Forwarded-For se disponível, senão usar IP da conexão
+    return req.ip || req.connection.remoteAddress || 'unknown';
+  },
   // Permitir mais tentativas para rotas de autenticação
   skip: (req) => {
     // Pular rate limiting para health check
@@ -77,7 +88,12 @@ const authLimiter = rateLimit({
     error: 'Muitas tentativas de login. Tente novamente em 5 minutos.'
   },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // Função personalizada para gerar chave considerando proxy
+  keyGenerator: (req) => {
+    // Usar X-Forwarded-For se disponível, senão usar IP da conexão
+    return req.ip || req.connection.remoteAddress || 'unknown';
+  }
 });
 
 app.use('/api/auth', authLimiter);
@@ -94,8 +110,54 @@ app.use(express.urlencoded({
   parameterLimit: 50000
 }));
 
-// Middleware para logging simplificado
+// Middleware para logging detalhado
 app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  const method = req.method;
+  const url = req.originalUrl;
+  const ip = req.ip;
+  const userAgent = req.get('User-Agent');
+  const authHeader = req.get('Authorization');
+  
+  console.log('\n=== REQUISIÇÃO RECEBIDA ===');
+  console.log(`[${timestamp}] ${method} ${url}`);
+  console.log(`IP: ${ip}`);
+  console.log(`User-Agent: ${userAgent}`);
+  console.log(`Authorization Header: ${authHeader ? 'Bearer ***' + authHeader.slice(-20) : 'AUSENTE'}`);
+  console.log(`Headers:`, JSON.stringify({
+    'content-type': req.get('Content-Type'),
+    'origin': req.get('Origin'),
+    'referer': req.get('Referer'),
+    'x-forwarded-for': req.get('X-Forwarded-For'),
+    'x-real-ip': req.get('X-Real-IP')
+  }, null, 2));
+  
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log(`Body:`, JSON.stringify(req.body, null, 2));
+  }
+  
+  // Interceptar resposta para logar
+  const originalSend = res.send;
+  res.send = function(data) {
+    console.log(`=== RESPOSTA ENVIADA ===`);
+    console.log(`[${timestamp}] ${method} ${url} - Status: ${res.statusCode}`);
+    
+    if (res.statusCode >= 400) {
+      console.log(`❌ ERRO ${res.statusCode}:`);
+      try {
+        const responseData = typeof data === 'string' ? JSON.parse(data) : data;
+        console.log('Dados do erro:', JSON.stringify(responseData, null, 2));
+      } catch (e) {
+        console.log('Dados do erro (raw):', data);
+      }
+    } else {
+      console.log(`✅ SUCESSO ${res.statusCode}`);
+    }
+    
+    console.log('==============================\n');
+    return originalSend.call(this, data);
+  };
+  
   next();
 });
 
