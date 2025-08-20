@@ -327,7 +327,20 @@ router.put('/profile/me', (req, res, next) => {
       console.log(`Senha atual recebida: "${currentPassword}"`);
       console.log(`Hash no banco: "${users[0].password}"`);
       
-      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, users[0].password);
+      let isCurrentPasswordValid = false;
+      
+      // Verificar se a senha no banco é um hash bcrypt (começa com $2a$, $2b$, $2x$, $2y$)
+      const isBcryptHash = /^\$2[abxy]\$/.test(users[0].password);
+      
+      if (isBcryptHash) {
+        // Senha está hasheada - usar bcrypt.compare
+        console.log(`✅ Senha está hasheada - usando bcrypt.compare`);
+        isCurrentPasswordValid = await bcrypt.compare(currentPassword, users[0].password);
+      } else {
+        // Senha está em texto plano - comparar diretamente
+        console.log(`⚠️  Senha está em texto plano - comparação direta`);
+        isCurrentPasswordValid = currentPassword === users[0].password;
+      }
       
       console.log(`Resultado da comparação: ${isCurrentPasswordValid}`);
       console.log(`===============================`);
