@@ -42,12 +42,22 @@ const allowedOrigins = config.cors.allowedOrigins;
 
 const corsOptions = {
   origin: function (origin, callback) {
+    console.log(`=== VERIFICAÇÃO CORS ===`);
+    console.log(`Origin recebido: "${origin}"`);
+    console.log(`Origins permitidos:`, allowedOrigins);
+    
     // Permitir requisições sem origin (como mobile apps ou Postman)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log(`✅ Origin vazio - permitido`);
+      return callback(null, true);
+    }
     
     if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log(`✅ Origin encontrado na lista - permitido`);
       callback(null, true);
     } else {
+      console.log(`❌ Origin NÃO encontrado na lista - bloqueado`);
+      console.log(`Erro CORS: Origin "${origin}" não está na lista de permitidos`);
       callback(new Error('Não permitido pelo CORS'));
     }
   },
@@ -58,6 +68,24 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(compression());
+
+// Log detalhado de todas as requisições
+app.use((req, res, next) => {
+  console.log(`\n=== REQUISIÇÃO RECEBIDA ===`);
+  console.log(`${req.method} ${req.url}`);
+  console.log(`Origin: ${req.get('Origin') || 'undefined'}`);
+  console.log(`Referer: ${req.get('Referer') || 'undefined'}`);
+  console.log(`User-Agent: ${req.get('User-Agent') || 'undefined'}`);
+  console.log(`IP: ${req.ip || req.connection.remoteAddress || 'unknown'}`);
+  console.log(`Headers relevantes:`, {
+    origin: req.get('Origin'),
+    referer: req.get('Referer'),
+    host: req.get('Host'),
+    'x-forwarded-for': req.get('X-Forwarded-For')
+  });
+  console.log(`========================\n`);
+  next();
+});
 
 // Rate limiting - Configuração mais permissiva para desenvolvimento
 const limiter = rateLimit({
