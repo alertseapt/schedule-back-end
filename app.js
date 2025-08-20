@@ -10,27 +10,20 @@ require('dotenv').config();
 console.log(`=== CARREGANDO CONFIGURAÇÃO ===`);
 console.log(`NODE_ENV: "${process.env.NODE_ENV}"`);
 
+// Detectar se está rodando no IIS (Windows Server)
+const isRunningOnIIS = process.cwd().includes('inetpub') || process.cwd().includes('wwwroot');
+console.log(`🖥️ Executando no IIS: ${isRunningOnIIS ? 'SIM' : 'NÃO'}`);
+
 let config;
-if (process.env.NODE_ENV === 'production') {
+if (isRunningOnIIS) {
+  console.log(`✅ Carregando configuração específica para IIS`);
+  config = require('./config/iis');
+} else if (process.env.NODE_ENV === 'production') {
   console.log(`✅ Carregando configuração de PRODUÇÃO`);
   config = require('./config/production');
 } else {
   console.log(`✅ Carregando configuração de DESENVOLVIMENTO`);
-  // Configuração padrão para desenvolvimento
-  config = {
-    cors: {
-      allowedOrigins: [
-        'http://localhost:8000',
-        'http://127.0.0.1:8000',
-        'null',
-        'https://schedule-mercocamp-front-end2.vercel.app',
-        'https://recebimento.mercocamptech.com.br',
-        'http://recebimento.mercocamptech.com.br',  // Adicionado HTTP
-        'http://recebimento.mercocamptech.com.br:80',  // Com porta explícita
-        'http://recebimento.mercocamptech.com.br:443'  // Para casos de proxy reverso
-      ]
-    }
-  };
+  config = require('./config/development');
 }
 
 console.log(`Configuração CORS carregada:`, config.cors.allowedOrigins);

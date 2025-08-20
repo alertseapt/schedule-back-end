@@ -117,3 +117,4 @@ testPort(port).then((isRunning) => {
     console.log(`${colors.yellow}ℹ️ Inicie o servidor com: npm start${colors.reset}`);
   }
 });
+

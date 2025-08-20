@@ -1,37 +1,36 @@
-// Configuração de produção para o Railway
-// Este arquivo contém as configurações hardcoded para produção
+// Configuração de desenvolvimento
+// Este arquivo contém as configurações para ambiente de desenvolvimento
 
 module.exports = {
-  // Configurações do banco de dados ODH Server
+  // Configurações do banco de dados
   database: {
-    host: 'mercocamp.ip.odhserver.com',
-    port: 33101,
-    user: 'projetos',
-    password: 'masterkey', // Senha do banco de dados - CONFIRMADA
+    host: process.env.DB_HOST || 'mercocamp.ip.odhserver.com',
+    port: process.env.DB_PORT || 33101,
+    user: process.env.DB_USER || 'projetos',
+    password: process.env.DB_PASSWORD || 'masterkey',
     databases: {
-      dbusers: 'dbusers',
-      dbcheckin: 'dbcheckin',
-      dbmercocamp: 'dbmercocamp'
+      dbusers: process.env.DB_NAME_USERS || 'dbusers',
+      dbcheckin: process.env.DB_NAME_CHECKIN || 'dbcheckin',
+      dbmercocamp: process.env.DB_NAME_MERCOCAMP || 'dbmercocamp'
     }
   },
   
   // Configurações do servidor
   server: {
     port: process.env.PORT || 4000,
-    environment: 'production'
-    // Railway gerencia automaticamente o binding do host
+    environment: 'development'
   },
   
   // Configurações JWT
   jwt: {
-    secret: 'mercocamp_schedule_api_jwt_secret_key_2025_super_secure_production',
-    expiresIn: '7d'
+    secret: process.env.JWT_SECRET || 'dev_jwt_secret_key_2025',
+    expiresIn: process.env.JWT_EXPIRE || '7d'
   },
   
   // Configurações de rate limiting
   rateLimit: {
     windowMs: 5 * 60 * 1000, // 5 minutos
-    max: 500 // máximo 500 requests por IP
+    max: 1000 // máximo 1000 requests por IP (mais permissivo para desenvolvimento)
   },
   
   // Configurações CORS
@@ -42,7 +41,9 @@ module.exports = {
       'http://127.0.0.1:8000',
       'http://localhost:3000',
       'http://127.0.0.1:3000',
-      // Produção
+      'http://localhost:4000',
+      'http://127.0.0.1:4000',
+      // Produção (para testes)
       'https://schedule-mercocamp-front-end2.vercel.app',
       'https://recebimento.mercocamptech.com.br',
       'http://recebimento.mercocamptech.com.br',
@@ -60,9 +61,9 @@ module.exports = {
   
   // Configurações do Corpem WMS
   corpem: {
-    baseURL: 'http://webcorpem.no-ip.info:800/scripts/mh.dll/wc',
-    cnpjWms: '27630772000244',
-    token: '6cnc3',
-    tokenHeader: 'TOKEN_CP'
+    baseURL: process.env.CORPEM_BASE_URL || 'http://webcorpem.no-ip.info:800/scripts/mh.dll/wc',
+    cnpjWms: process.env.CORPEM_CNPJ_WMS || '27630772000244',
+    token: process.env.CORPEM_TOKEN || '6cnc3',
+    tokenHeader: process.env.CORPEM_TOKEN_HEADER || 'TOKEN_CP'
   }
-}; 
+};

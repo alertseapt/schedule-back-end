@@ -170,3 +170,4 @@ Depois do deploy, teste a API com estas URLs:
 ---
 
 Lembre-se que a Vercel é mais adequada para APIs leves. Se seu backend tiver alta demanda ou operações intensivas, considere uma hospedagem tradicional como VPS ou serviços dedicados para Node.js.
+

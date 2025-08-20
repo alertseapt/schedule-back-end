@@ -10,3 +10,4 @@ node app.js
 echo.
 echo Pressione qualquer tecla para sair...
 pause > nul
+

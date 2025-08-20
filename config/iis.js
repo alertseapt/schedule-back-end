@@ -1,5 +1,5 @@
-// Configuração de produção para o Railway
-// Este arquivo contém as configurações hardcoded para produção
+// Configuração específica para IIS (Windows Server)
+// Este arquivo contém as configurações otimizadas para ambiente IIS
 
 module.exports = {
   // Configurações do banco de dados ODH Server
@@ -7,7 +7,7 @@ module.exports = {
     host: 'mercocamp.ip.odhserver.com',
     port: 33101,
     user: 'projetos',
-    password: 'masterkey', // Senha do banco de dados - CONFIRMADA
+    password: 'masterkey',
     databases: {
       dbusers: 'dbusers',
       dbcheckin: 'dbcheckin',
@@ -18,13 +18,12 @@ module.exports = {
   // Configurações do servidor
   server: {
     port: process.env.PORT || 4000,
-    environment: 'production'
-    // Railway gerencia automaticamente o binding do host
+    environment: 'iis'
   },
   
   // Configurações JWT
   jwt: {
-    secret: 'mercocamp_schedule_api_jwt_secret_key_2025_super_secure_production',
+    secret: 'mercocamp_schedule_api_jwt_secret_key_2025_super_secure_iis',
     expiresIn: '7d'
   },
   
@@ -34,7 +33,7 @@ module.exports = {
     max: 500 // máximo 500 requests por IP
   },
   
-  // Configurações CORS
+  // Configurações CORS - Mais permissivo para IIS
   cors: {
     allowedOrigins: [
       // Desenvolvimento local
@@ -42,6 +41,8 @@ module.exports = {
       'http://127.0.0.1:8000',
       'http://localhost:3000',
       'http://127.0.0.1:3000',
+      'http://localhost:4000',
+      'http://127.0.0.1:4000',
       // Produção
       'https://schedule-mercocamp-front-end2.vercel.app',
       'https://recebimento.mercocamptech.com.br',
@@ -52,6 +53,9 @@ module.exports = {
       'http://recebhomolog.mercocamptech.com.br:80',
       'http://recebhomolog.mercocamptech.com.br:443',
       'https://recebhomolog.mercocamptech.com.br:443',
+      // Variações com trailing slash
+      'http://recebhomolog.mercocamptech.com.br/',
+      'https://recebhomolog.mercocamptech.com.br/',
       // Variáveis de ambiente
       process.env.FRONTEND_URL,
       process.env.ALLOWED_ORIGINS
@@ -60,9 +64,9 @@ module.exports = {
   
   // Configurações do Corpem WMS
   corpem: {
-    baseURL: 'http://webcorpem.no-ip.info:800/scripts/mh.dll/wc',
+    baseURL: 'http://webcorpem.no-ip.info:37560/scripts/mh.dll/wc',
     cnpjWms: '27630772000244',
     token: '6cnc3',
     tokenHeader: 'TOKEN_CP'
   }
-}; 
+};
