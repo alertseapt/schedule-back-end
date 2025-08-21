@@ -169,7 +169,7 @@ router.post('/change-status', async (req, res) => {
 
     // Verificar se o agendamento existe
     const existingSchedule = await executeCheckinQuery(
-      'SELECT id, status, historic FROM schedule_list WHERE id = ?',
+      'SELECT id, status, historic, integration FROM schedule_list WHERE id = ?',
       [scheduleId]
     );
 
@@ -217,11 +217,22 @@ router.post('/change-status', async (req, res) => {
     const historyKey = `change_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     historic[historyKey] = historyEntry;
 
-    // Atualizar no banco de dados
-    await executeCheckinQuery(
-      'UPDATE schedule_list SET status = ?, historic = ? WHERE id = ?',
-      [newStatus, JSON.stringify(historic), scheduleId]
-    );
+    // Atualizar no banco de dados - incluindo integration quando mudando para "Em conferência"
+    let updateQuery = 'UPDATE schedule_list SET status = ?, historic = ?';
+    let updateParams = [newStatus, JSON.stringify(historic)];
+    
+    // Se mudando para "Em conferência" ou "Conferência", definir data de integração se ainda não existir
+    if ((newStatus === 'Em conferência' || newStatus === 'Conferência') && !schedule.integration) {
+      updateQuery += ', integration = NOW()';
+      console.log(`📅 Definindo data de integração para agendamento ${scheduleId} (status: ${newStatus})`);
+    } else if ((newStatus === 'Em conferência' || newStatus === 'Conferência') && schedule.integration) {
+      console.log(`📅 Agendamento ${scheduleId} já possui data de integração: ${schedule.integration}`);
+    }
+    
+    updateQuery += ' WHERE id = ?';
+    updateParams.push(scheduleId);
+    
+    await executeCheckinQuery(updateQuery, updateParams);
 
     // Se o novo status for "Conferência", disparar integrações Corpem
     if (newStatus === 'Conferência') {

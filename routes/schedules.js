@@ -1202,7 +1202,7 @@ router.patch('/:id/status', validate(paramSchemas.id, 'params'), validate(schedu
 
     // Verificar se o agendamento existe
     const existingSchedules = await executeCheckinQuery(
-      'SELECT id, historic, status, client, is_booking, nfe_key FROM schedule_list WHERE id = ?',
+      'SELECT id, historic, status, client, is_booking, nfe_key, integration FROM schedule_list WHERE id = ?',
       [id]
     );
 
@@ -1243,11 +1243,25 @@ router.patch('/:id/status', validate(paramSchemas.id, 'params'), validate(schedu
       }
     };
 
-    // Executar atualização
-    await executeCheckinQuery(
-      'UPDATE schedule_list SET status = ?, historic = ? WHERE id = ?',
-      [status, JSON.stringify(updatedHistoric), id]
-    );
+    // Executar atualização - incluindo integration quando mudando para "Em conferência"
+    let updateQuery = 'UPDATE schedule_list SET status = ?, historic = ?';
+    let updateParams = [status, JSON.stringify(updatedHistoric)];
+    
+    // Se mudando para "Em conferência", definir data de integração se ainda não existir
+    if (status === 'Em conferência' || status === 'Conferência') {
+      // Verificar se já tem data de integração
+      if (!schedule.integration) {
+        updateQuery += ', integration = NOW()';
+        console.log(`📅 Definindo data de integração para agendamento ${id} (status: ${status})`);
+      } else {
+        console.log(`📅 Agendamento ${id} já possui data de integração: ${schedule.integration}`);
+      }
+    }
+    
+    updateQuery += ' WHERE id = ?';
+    updateParams.push(id);
+    
+    await executeCheckinQuery(updateQuery, updateParams);
 
     // Buscar dados completos do agendamento para o e-mail
     const updatedSchedules = await executeCheckinQuery(

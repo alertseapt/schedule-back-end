@@ -213,6 +213,7 @@ const scheduleVerificationRoutes = require('./routes/schedule-verification');
 const dpVerificationRoutes = require('./routes/dp-verification');
 const dpSchedulerRoutes = require('./routes/dp-scheduler');
 const dpStatusMonitoringRoutes = require('./routes/dp-status-monitoring');
+const dpSyncRoutes = require('./routes/dp-sync');
 const databaseTestRoutes = require('./routes/database-test');
 
 // Usar rotas
@@ -228,6 +229,7 @@ app.use('/api/schedule-verification', scheduleVerificationRoutes);
 app.use('/api/dp-verification', dpVerificationRoutes);
 app.use('/api/dp-scheduler', dpSchedulerRoutes);
 app.use('/api/dp-status-monitoring', dpStatusMonitoringRoutes);
+app.use('/api/dp-sync', dpSyncRoutes);
 app.use('/api/database-test', databaseTestRoutes);
 
 // Rota de teste de conectividade aprimorada
@@ -386,6 +388,8 @@ app.get('/api/info', (req, res) => {
       'Gerenciamento de usuários',
       'Gerenciamento de produtos/relacionamentos cliente-fornecedor',
       'Gerenciamento de agendamentos com histórico',
+      'Sincronização automática de números de DP',
+      'Preenchimento automático de data de integração',
       'Validação de dados',
       'Rate limiting',
       'Logs de auditoria'
@@ -452,6 +456,17 @@ async function retryDatabaseConnection() {
     if (dbHealthy) {
       isDatabaseConnected = true;
       console.log('✅ Conexão com banco de dados reestabelecida!');
+      
+      // Iniciar serviços automáticos após reconexão
+      try {
+        const dpSyncService = require('./services/dpSyncService');
+        if (!dpSyncService.isRunning) {
+          dpSyncService.start();
+          console.log('✅ Serviço de sincronização de DP reiniciado após reconexão');
+        }
+      } catch (error) {
+        console.error('❌ Erro ao reiniciar serviço de sincronização de DP:', error.message);
+      }
     } else {
       console.log('⏳ Falha na conexão, tentando novamente em 30 segundos...');
       setTimeout(retryDatabaseConnection, 30000);
@@ -568,6 +583,24 @@ async function startServer() {
     server.on('error', (err) => {
       console.error('🔴 Erro do servidor:', err);
     });
+
+    // Inicializar serviços automáticos após servidor estar online
+    if (isDatabaseConnected) {
+      console.log('\n🔧 Iniciando serviços automáticos...');
+      
+      // Iniciar serviço de sincronização de DP
+      try {
+        const dpSyncService = require('./services/dpSyncService');
+        dpSyncService.start();
+        console.log('✅ Serviço de sincronização de DP iniciado');
+      } catch (error) {
+        console.error('❌ Erro ao iniciar serviço de sincronização de DP:', error.message);
+      }
+      
+      console.log('🔧 Serviços automáticos inicializados\n');
+    } else {
+      console.log('⚠️ Serviços automáticos não iniciados (aguardando conexão com BD)');
+    }
     
   } catch (error) {
     console.error('❌ Erro ao iniciar servidor:', error);
