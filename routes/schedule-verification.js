@@ -183,7 +183,7 @@ router.post('/change-status', async (req, res) => {
 
     // Verificar se o status atual permite alteração
     const currentStatus = schedule.status;
-    const blockedStatuses = ['Estoque', 'Cancelado', 'Recusado'];
+    const blockedStatuses = ['Em estoque', 'Estoque', 'Cancelado', 'Recusado'];
     
     if (blockedStatuses.includes(currentStatus)) {
       return res.status(400).json({

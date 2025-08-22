@@ -2,6 +2,7 @@ const express = require('express');
 const { executeUsersQuery } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
 const emailService = require('../services/emailService');
+const clientEmailService = require('../services/clientEmailService');
 const Joi = require('joi');
 
 const router = express.Router();
@@ -23,7 +24,7 @@ const emailSettingsSchema = Joi.object({
     conferencia: Joi.boolean().default(false),
     recebido: Joi.boolean().default(false),
     tratativa: Joi.boolean().default(false),
-    estoque: Joi.boolean().default(false),
+    estoque: Joi.boolean().default(false), // Manter chave original para compatibilidade
     recusar: Joi.boolean().default(false),
     recusado: Joi.boolean().default(false),
     cancelado: Joi.boolean().default(false)
@@ -129,9 +130,36 @@ router.put('/', async (req, res) => {
 
     const currentConfig = users[0].config;
     let settings = {};
+    let oldEmailSettings = null;
 
     if (currentConfig) {
       settings = typeof currentConfig === 'string' ? JSON.parse(currentConfig) : currentConfig;
+      oldEmailSettings = settings.emailSettings;
+    }
+
+    // NOVA FUNCIONALIDADE: Atualizar e-mails na tabela 'clientes' se emailSettings foi alterado
+    if (value.emailSettings) {
+      try {
+        // Atualizar e-mail principal
+        const oldPrimaryEmail = oldEmailSettings?.primaryEmail;
+        const newPrimaryEmail = value.emailSettings.primaryEmail;
+        
+        if (oldPrimaryEmail !== newPrimaryEmail) {
+          await clientEmailService.updateUserPrimaryEmail(req.user.id, oldPrimaryEmail, newPrimaryEmail);
+          console.log(`✅ E-mail principal atualizado na tabela clientes: ${oldPrimaryEmail} → ${newPrimaryEmail}`);
+        }
+        
+        // Atualizar e-mails em cópia
+        const oldCcEmails = oldEmailSettings?.ccEmails || [];
+        const newCcEmails = value.emailSettings.ccEmails || [];
+        
+        await clientEmailService.updateUserCcEmails(req.user.id, oldCcEmails, newCcEmails);
+        console.log(`✅ E-mails em cópia atualizados na tabela clientes`);
+        
+      } catch (clientEmailError) {
+        console.error('⚠️ Erro ao atualizar e-mails na tabela clientes:', clientEmailError.message);
+        // Não falha a operação principal se houver erro na atualização da tabela clientes
+      }
     }
 
     // Mesclar com novas configurações
@@ -186,9 +214,34 @@ router.patch('/email', async (req, res) => {
 
     const currentConfig = users[0].config;
     let settings = {};
+    let oldEmailSettings = null;
 
     if (currentConfig) {
       settings = typeof currentConfig === 'string' ? JSON.parse(currentConfig) : currentConfig;
+      oldEmailSettings = settings.emailSettings;
+    }
+
+    // NOVA FUNCIONALIDADE: Atualizar e-mails na tabela 'clientes' baseado no cli_access
+    try {
+      // Atualizar e-mail principal
+      const oldPrimaryEmail = oldEmailSettings?.primaryEmail;
+      const newPrimaryEmail = value.primaryEmail;
+      
+      if (oldPrimaryEmail !== newPrimaryEmail) {
+        await clientEmailService.updateUserPrimaryEmail(req.user.id, oldPrimaryEmail, newPrimaryEmail);
+        console.log(`✅ E-mail principal atualizado na tabela clientes: ${oldPrimaryEmail} → ${newPrimaryEmail}`);
+      }
+      
+      // Atualizar e-mails em cópia
+      const oldCcEmails = oldEmailSettings?.ccEmails || [];
+      const newCcEmails = value.ccEmails || [];
+      
+      await clientEmailService.updateUserCcEmails(req.user.id, oldCcEmails, newCcEmails);
+      console.log(`✅ E-mails em cópia atualizados na tabela clientes`);
+      
+    } catch (clientEmailError) {
+      console.error('⚠️ Erro ao atualizar e-mails na tabela clientes:', clientEmailError.message);
+      // Não falha a operação principal se houver erro na atualização da tabela clientes
     }
 
     // Atualizar apenas configurações de e-mail
@@ -389,6 +442,54 @@ router.get('/smtp-status', async (req, res) => {
     console.error('❌ Erro ao verificar SMTP:', error);
     res.status(500).json({
       error: 'Erro interno do servidor'
+    });
+  }
+});
+
+// Endpoint de teste para verificar a funcionalidade de e-mails de clientes
+router.get('/test-client-emails', async (req, res) => {
+  try {
+    console.log('📥 GET /user-settings/test-client-emails - Testando funcionalidade de e-mails de clientes');
+
+    // Buscar todos os e-mails dos clientes do usuário
+    const clientEmails = await clientEmailService.getAllUserClientEmails(req.user.id);
+    
+    // Buscar configurações atuais do usuário
+    const users = await executeUsersQuery(
+      'SELECT config, cli_access FROM users WHERE id = ?',
+      [req.user.id]
+    );
+    
+    let userSettings = null;
+    let cliAccessData = null;
+    
+    if (users.length > 0) {
+      const userConfig = users[0].config;
+      if (userConfig) {
+        userSettings = typeof userConfig === 'string' ? JSON.parse(userConfig) : userConfig;
+      }
+      
+      const cliAccess = users[0].cli_access;
+      if (cliAccess) {
+        cliAccessData = typeof cliAccess === 'string' ? JSON.parse(cliAccess) : cliAccess;
+      }
+    }
+
+    res.json({
+      userId: req.user.id,
+      userName: req.user.user,
+      clientEmails: clientEmails,
+      totalClientEmails: clientEmails.length,
+      userEmailSettings: userSettings?.emailSettings || null,
+      cliAccess: Object.keys(cliAccessData || {}),
+      message: 'Teste da funcionalidade de e-mails de clientes executado com sucesso'
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao testar funcionalidade de e-mails de clientes:', error);
+    res.status(500).json({
+      error: 'Erro interno do servidor',
+      details: error.message
     });
   }
 });

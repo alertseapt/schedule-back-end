@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { executeUsersQuery } = require('../config/database');
+const clientEmailService = require('./clientEmailService');
 
 /**
  * Serviço de E-mail baseado no arquivo Python fornecido
@@ -48,7 +49,7 @@ class EmailService {
       'Agendado': '#28a745',
       'Conferência': '#6f42c1',
       'Tratativa': '#fd7e14',
-      'Estoque': '#20c997',
+      'Em estoque': '#20c997',
       'Recusar': '#dc3545',
       'Cancelar': '#ffc107',
       'Recusado': '#dc3545',
@@ -617,19 +618,18 @@ class EmailService {
       return emailSettings.statusNotifications['solicitado'] !== false;
     }
 
-    // Status importantes que sempre devem enviar notificação
-    const importantStatuses = ['cancelar', 'cancelado', 'recusado'];
+    // Com a nova funcionalidade de e-mails da tabela 'clientes', 
+    // enviar notificação para TODOS os status por padrão
     const statusKey = status.toLowerCase();
     
-    if (importantStatuses.includes(statusKey)) {
-      return true; // Sempre enviar para status importantes
-    }
-    
+    // Se não há configurações do usuário, enviar por padrão
     if (!emailSettings || !emailSettings.statusNotifications) {
-      return false;
+      return true; // Por padrão, enviar para todos os status
     }
 
-    return emailSettings.statusNotifications[statusKey] === true;
+    // Se há configurações, verificar se o status específico está desabilitado
+    // Só não enviar se explicitamente configurado como false
+    return emailSettings.statusNotifications[statusKey] !== false;
   }
 
   /**
@@ -637,30 +637,85 @@ class EmailService {
    */
   async sendStatusChangeNotification(userId, scheduleData, oldStatus, newStatus, user, comment) {
     try {
+      console.log('📧 [EMAIL] Iniciando sendStatusChangeNotification:', {
+        userId,
+        scheduleId: scheduleData.id,
+        oldStatus,
+        newStatus,
+        isCreation: oldStatus === null || oldStatus === undefined
+      });
+
       const isCreation = oldStatus === null || oldStatus === undefined;
 
       const emailSettings = await this.getUserEmailSettings(userId);
+      console.log('📧 [EMAIL] Configurações do usuário:', {
+        userId,
+        hasEmailSettings: !!emailSettings,
+        statusNotifications: emailSettings?.statusNotifications || 'Não configurado'
+      });
       
-      if (!this.shouldSendNotification(emailSettings, newStatus, isCreation)) {
+      // NOVA FUNCIONALIDADE: Buscar e-mails da tabela 'clientes' baseado no CNPJ do agendamento
+      const clientCnpj = scheduleData.client_cnpj || scheduleData.client;
+      console.log('📧 [EMAIL] CNPJ extraído:', {
+        clientCnpj,
+        fromClientCnpj: scheduleData.client_cnpj,
+        fromClient: scheduleData.client
+      });
+      
+      const shouldSend = this.shouldSendNotification(emailSettings, newStatus, isCreation);
+      console.log('📧 [EMAIL] Verificação shouldSend:', {
+        shouldSend,
+        newStatus,
+        isCreation
+      });
+      
+      
+      if (!shouldSend) {
+        console.log('📧 [EMAIL] BLOQUEADO - Notificação desabilitada:', newStatus);
         return { success: false, reason: `Notificação desabilitada para status ${newStatus}` };
       }
 
       let recipients = [];
       
-      if (emailSettings) {
+      console.log('📧 [EMAIL] Buscando e-mails da tabela clientes...');
+      if (clientCnpj) {
+        const clientEmails = await clientEmailService.getClientEmails(clientCnpj);
+        console.log('📧 [EMAIL] E-mails encontrados na tabela:', {
+          clientCnpj,
+          emails: clientEmails
+        });
+        
+        recipients.push(...clientEmails);
+      } else {
+        console.log('📧 [EMAIL] AVISO - CNPJ não disponível para busca');
+      }
+      
+      // Manter funcionalidade original como fallback se não houver e-mails na tabela clientes
+      if (recipients.length === 0 && emailSettings) {
+        console.log('📧 [EMAIL] Usando fallback - configurações do usuário');
         if (emailSettings.primaryEmail) {
           recipients.push(emailSettings.primaryEmail);
+          console.log('📧 [EMAIL] Adicionado email primário:', emailSettings.primaryEmail);
         }
         
         if (emailSettings.ccEmails && Array.isArray(emailSettings.ccEmails)) {
           recipients.push(...emailSettings.ccEmails);
+          console.log('📧 [EMAIL] Adicionados emails CC:', emailSettings.ccEmails);
         }
       }
 
+      console.log('📧 [EMAIL] Lista final de destinatários:', recipients);
+
       if (recipients.length === 0) {
+        console.log('📧 [EMAIL] PULADO - Nenhum destinatário encontrado');
         return { success: true, reason: 'Nenhum e-mail configurado - envio pulado', skipped: true };
       }
 
+      // Remover duplicatas de e-mails
+      recipients = [...new Set(recipients)];
+      console.log('📧 [EMAIL] Destinatários únicos:', recipients);
+
+      console.log('📧 [EMAIL] Gerando template HTML...');
       const htmlBody = await this.generateStatusChangeTemplate(scheduleData, oldStatus, newStatus, user, comment);
 
       const senderEmail = process.env.SMTP_SENDER_EMAIL || process.env.SMTP_USER || 'no-reply@mercocamptech.com.br';
@@ -675,7 +730,20 @@ class EmailService {
         html: htmlBody
       };
 
+      console.log('📧 [EMAIL] Configurações do e-mail:', {
+        from: mailOptions.from,
+        to: mailOptions.to,
+        subject: mailOptions.subject
+      });
+
+      console.log('📧 [EMAIL] Enviando e-mail...');
       const info = await this.transporter.sendMail(mailOptions);
+      console.log('📧 [EMAIL] E-mail enviado com sucesso!', {
+        messageId: info.messageId,
+        accepted: info.accepted,
+        rejected: info.rejected
+      });
+
 
       return {
         success: true,
@@ -684,7 +752,11 @@ class EmailService {
       };
 
     } catch (error) {
-      console.error(`Erro ao enviar e-mail de notificação (ID: ${scheduleData.id}):`, error.message);
+      console.error('📧 [EMAIL] ERRO ao enviar e-mail:', {
+        scheduleId: scheduleData.id,
+        error: error.message,
+        stack: error.stack
+      });
       return {
         success: false,
         error: error.message

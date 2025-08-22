@@ -98,7 +98,7 @@ const nfeSchemas = {
   }),
   
   updateStatus: Joi.object({
-    status: Joi.string().max(20).valid('Solicitado', 'Contestado', 'Agendado', 'Conferência', 'Tratativa', 'Estoque', 'Recusar', 'Cancelar', 'Recusado', 'Cancelado').required(),
+    status: Joi.string().max(20).valid('Solicitado', 'Contestado', 'Agendado', 'Conferência', 'Tratativa', 'Em estoque', 'Recusar', 'Cancelar', 'Recusado', 'Cancelado').required(),
     historic_entry: Joi.object().keys({
       timestamp: Joi.date().iso().default(new Date()),
       user: Joi.string().max(50).required(),

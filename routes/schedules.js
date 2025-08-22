@@ -122,7 +122,7 @@ const scheduleSchemas = {
     client: Joi.string().min(1).max(100).required(), // Allow client name/CNPJ, more flexible than 14 chars
     case_count: Joi.number().integer().min(0).default(0), // Default 0 para agendamentos de marcação
     date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null, '').optional(), // Opcional para agendamentos de marcação
-    status: Joi.string().max(20).valid('Solicitado', 'Contestado', 'Agendado', 'Conferência', 'Tratativa', 'Estoque', 'Recusar', 'Cancelar', 'Recusado', 'Cancelado').default('Solicitado'),
+    status: Joi.string().max(20).valid('Solicitado', 'Contestado', 'Agendado', 'Conferência', 'Tratativa', 'Em estoque', 'Recusar', 'Cancelar', 'Recusado', 'Cancelado').default('Solicitado'),
     historic: Joi.object().default({}),
     supplier: Joi.string().max(50).default('Agendamento de Marcação'), // Default para agendamentos de marcação
     qt_prod: Joi.number().integer().min(0).default(0), // Default 0 para agendamentos de marcação
@@ -138,7 +138,7 @@ const scheduleSchemas = {
     client: Joi.string().min(1).max(100), // Allow client name/CNPJ, more flexible than 14 chars
     case_count: Joi.number().integer().min(0),
     date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
-    status: Joi.string().max(20).valid('Solicitado', 'Contestado', 'Agendado', 'Conferência', 'Tratativa', 'Estoque', 'Recusar', 'Cancelar', 'Recusado', 'Cancelado'),
+    status: Joi.string().max(20).valid('Solicitado', 'Contestado', 'Agendado', 'Conferência', 'Tratativa', 'Em estoque', 'Recusar', 'Cancelar', 'Recusado', 'Cancelado'),
     historic: Joi.object(),
     supplier: Joi.string().max(50),
     qt_prod: Joi.number().integer().min(0),
@@ -784,10 +784,18 @@ router.post('/', authenticateToken, validateSchedulePermissions, validate(schedu
     const completeScheduleData = {
       ...createdSchedule,
       client_info: clientInfo,
-      client_cnpj: createdSchedule.client
+      client_cnpj: clientInfo?.cnpj || createdSchedule.client // Usar CNPJ do clientInfo se disponível
     };
+    
+    console.log('📧 Schedules - Preparando dados para e-mail na criação:', {
+      originalClient: createdSchedule.client,
+      clientInfo: clientInfo,
+      finalClientCnpj: completeScheduleData.client_cnpj
+    });
+
 
     // Enviar notificação por e-mail de criação (assíncrono, não bloqueia a resposta)
+    console.log('🚀 [SCHEDULES] Iniciando envio de e-mail de criação...');
     emailService.sendStatusChangeNotification(
       req.user.id,
       completeScheduleData,
@@ -795,10 +803,10 @@ router.post('/', authenticateToken, validateSchedulePermissions, validate(schedu
       'Solicitado',
       req.user.user || 'Sistema',
       'Agendamento criado no sistema'
-    ).catch(error => {
-      if (!error.message || !error.message.includes('e-mail configurado')) {
-        console.error('Erro ao enviar e-mail de criação:', error);
-      }
+    ).then(result => {
+      console.log('🚀 [SCHEDULES] Resultado do envio de e-mail de criação:', result);
+    }).catch(error => {
+      console.error('🚀 [SCHEDULES] ERRO no envio de e-mail de criação:', error);
     });
 
     res.status(201).json({
@@ -950,6 +958,7 @@ router.post('/create-with-products', requireAdmin, validate(scheduleSchemas.crea
     };
 
     // Enviar notificação por e-mail de criação (assíncrono, não bloqueia a resposta)
+    console.log('🚀 [SCHEDULES-NFE] Iniciando envio de e-mail de criação via NFe...');
     emailService.sendStatusChangeNotification(
       req.user.id,
       completeScheduleData,
@@ -957,10 +966,10 @@ router.post('/create-with-products', requireAdmin, validate(scheduleSchemas.crea
       'Solicitado',
       req.user.user || 'Sistema',
       `Agendamento criado automaticamente a partir da NFe ${nfe_data.number}`
-    ).catch(error => {
-      if (!error.message || !error.message.includes('e-mail configurado')) {
-        console.error('Erro ao enviar e-mail de criação:', error);
-      }
+    ).then(result => {
+      console.log('🚀 [SCHEDULES-NFE] Resultado do envio de e-mail de criação via NFe:', result);
+    }).catch(error => {
+      console.error('🚀 [SCHEDULES-NFE] ERRO no envio de e-mail de criação via NFe:', error);
     });
 
     res.status(201).json({
@@ -1364,6 +1373,12 @@ router.patch('/:id/status', validate(paramSchemas.id, 'params'), validate(schedu
     };
 
     // Enviar notificação por e-mail (assíncrono, não bloqueia a resposta)
+    console.log('🔄 [SCHEDULES-UPDATE] Iniciando envio de e-mail de alteração de status:', {
+      scheduleId: id,
+      oldStatus: schedule.status,
+      newStatus: status,
+      userId: req.user.id
+    });
     emailService.sendStatusChangeNotification(
       req.user.id,
       completeUpdatedScheduleData,
@@ -1371,10 +1386,10 @@ router.patch('/:id/status', validate(paramSchemas.id, 'params'), validate(schedu
       status,
       req.user.user || 'Sistema',
       historic_entry.comment
-    ).catch(error => {
-      if (!error.message || !error.message.includes('e-mail configurado')) {
-        console.error('Erro ao enviar e-mail:', error);
-      }
+    ).then(result => {
+      console.log('🔄 [SCHEDULES-UPDATE] Resultado do envio de e-mail de alteração:', result);
+    }).catch(error => {
+      console.error('🔄 [SCHEDULES-UPDATE] ERRO no envio de e-mail de alteração:', error);
     });
 
     res.json({

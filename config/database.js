@@ -27,6 +27,11 @@ const usersPool = mysql.createPool({
   database: process.env.DB_USERS || 'dbusers'
 });
 
+const cobrancasPool = mysql.createPool({
+  ...dbConfig,
+  database: process.env.DB_COBRANCAS || 'dbcobrancas'
+});
+
 /**
  * Executa query no banco dbcheckin
  */
@@ -62,6 +67,19 @@ async function executeUsersQuery(query, params = []) {
     return rows;
   } catch (error) {
     console.error('❌ Erro na query do dbusers:', error);
+    throw error;
+  }
+}
+
+/**
+ * Executa query no banco dbcobrancas
+ */
+async function executeCobrancasQuery(query, params = []) {
+  try {
+    const [rows] = await cobrancasPool.execute(query, params);
+    return rows;
+  } catch (error) {
+    console.error('❌ Erro na query do dbcobrancas:', error);
     throw error;
   }
 }
@@ -104,6 +122,15 @@ async function testConnections() {
       allConnectionsHealthy = false;
     }
     
+    // Testar dbcobrancas
+    try {
+      await cobrancasPool.execute('SELECT 1');
+      console.log('✅ dbcobrancas: Conectado');
+    } catch (error) {
+      console.log('❌ dbcobrancas: Erro na conexão');
+      allConnectionsHealthy = false;
+    }
+    
     console.log('🔍 Teste de conexões concluído');
     
     if (allConnectionsHealthy) {
@@ -128,6 +155,7 @@ async function closeConnections() {
     await checkinPool.end();
     await mercocampPool.end();
     await usersPool.end();
+    await cobrancasPool.end();
     console.log('✅ Conexões fechadas');
   } catch (error) {
     console.error('❌ Erro ao fechar conexões:', error);
@@ -138,9 +166,11 @@ module.exports = {
   executeCheckinQuery,
   executeMercocampQuery,
   executeUsersQuery,
+  executeCobrancasQuery,
   testConnections,
   closeConnections,
   checkinPool,
   mercocampPool,
-  usersPool
+  usersPool,
+  cobrancasPool
 };
