@@ -180,37 +180,68 @@ const getClientInfo = async (clientCnpj, userCliAccess = null) => {
           cli_access_data: clientData
         };
         
+        console.log(`🔍 getClientInfo found in cli_access: ${clientCnpj} -> ${result.name}`);
         return result;
       }
     }
     
-    // Se não encontrou no usuário logado, buscar em todos os usuários
-    const users = await executeUsersQuery(
-      'SELECT cli_access FROM users WHERE cli_access IS NOT NULL'
-    );
-    
-    for (const user of users) {
-      const cliAccess = typeof user.cli_access === 'string' ? 
-        JSON.parse(user.cli_access) : user.cli_access;
+    // Se não encontrou no usuário logado, buscar em todos os usuários (NECESSÁRIO para estoque)
+    try {
+      const users = await executeUsersQuery(
+        'SELECT cli_access FROM users WHERE cli_access IS NOT NULL'
+      );
       
-      if (cliAccess[clientCnpj]) {
-        const clientData = cliAccess[clientCnpj];
+      for (const user of users) {
+        const cliAccess = typeof user.cli_access === 'string' ? 
+          JSON.parse(user.cli_access) : user.cli_access;
+        
+        if (cliAccess[clientCnpj]) {
+          const clientData = cliAccess[clientCnpj];
+          const result = {
+            cnpj: clientCnpj,
+            name: clientData.nome || `Cliente ${clientCnpj}`,
+            number: clientData.numero || clientCnpj,
+            source: 'cli_access_global',
+            cli_access_data: clientData
+          };
+          console.log(`🔍 getClientInfo found in global cli_access: ${clientCnpj} -> ${result.name}`);
+          return result;
+        }
+      }
+    } catch (globalCliError) {
+      console.error('Erro ao buscar em cli_access global:', globalCliError);
+    }
+
+    // Se não encontrou em cli_access, buscar na tabela wcl
+    try {
+      // Limpar CNPJ para busca (remover formatação)
+      const cleanCnpj = clientCnpj.replace(/[^0-9]/g, '');
+      
+      const wclClients = await executeMercocampQuery(
+        'SELECT cnpj_cpf, nome_cliente, no_seq FROM wcl WHERE REPLACE(REPLACE(REPLACE(cnpj_cpf, ".", ""), "/", ""), "-", "") = ? OR cnpj_cpf = ? LIMIT 1',
+        [cleanCnpj, clientCnpj]
+      );
+      
+      if (wclClients.length > 0) {
+        const wclClient = wclClients[0];
         const result = {
           cnpj: clientCnpj,
-          name: clientData.nome || `Cliente ${clientCnpj}`,
-          number: clientData.numero || clientCnpj,
-          source: 'cli_access',
-          cli_access_data: clientData
+          name: wclClient.nome_cliente || `Cliente ${clientCnpj}`,
+          number: wclClient.no_seq || clientCnpj,
+          source: 'wcl'
         };
-        
+        console.log(`🔍 getClientInfo found in WCL: ${clientCnpj} -> ${result.name}`);
         return result;
       }
+    } catch (wclError) {
+      console.error('Erro ao buscar cliente na tabela wcl:', wclError);
     }
     
     // Se não encontrar em lugar nenhum, retornar dados básicos
+    console.log(`⚠️ getClientInfo fallback: ${clientCnpj} -> ${clientCnpj} (no name found)`);
     return {
       cnpj: clientCnpj,
-      name: `Cliente ${clientCnpj}`,
+      name: clientCnpj, // Retornar CNPJ diretamente se não encontrar nome
       number: clientCnpj,
       source: 'fallback'
     };
@@ -218,7 +249,7 @@ const getClientInfo = async (clientCnpj, userCliAccess = null) => {
     console.error('Erro ao buscar informações do cliente:', error);
     return {
       cnpj: clientCnpj,
-      name: `Cliente ${clientCnpj}`,
+      name: clientCnpj, // Retornar CNPJ diretamente em caso de erro
       number: clientCnpj,
       source: 'error'
     };
@@ -258,6 +289,8 @@ const validateClientInWcl = async (clientCnpj) => {
 
 // Listar agendamentos (com filtro por cli_access)
 router.get('/', async (req, res) => {
+  const startTime = Date.now();
+  
   try {
     // Verificar se o usuário está autenticado
     if (!req.user) {
@@ -355,60 +388,60 @@ router.get('/', async (req, res) => {
     }
 
     // Buscar agendamentos na tabela schedule_list do dbcheckin
+    const dbStartTime = Date.now();
     const schedules = await executeCheckinQuery(
       `SELECT 
         id, number, nfe_key, client, date, status, historic, supplier, qt_prod, info, case_count, no_dp, is_booking
        FROM schedule_list 
        ${whereClause}
-       ORDER BY date DESC, id DESC
+       ORDER BY date ASC, id ASC
        LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`,
       params
     );
+    const dbTime = Date.now() - dbStartTime;
+
+    // Criar cache de clientes para otimizar performance
+    const clientCache = new Map();
+    const getClientInfoCached = async (clientCnpj) => {
+      if (clientCache.has(clientCnpj)) {
+        return clientCache.get(clientCnpj);
+      }
+      const clientInfo = await getClientInfo(clientCnpj, req.user.cli_access);
+      clientCache.set(clientCnpj, clientInfo);
+      return clientInfo;
+    };
 
     // Processar dados de retorno
+    const processStartTime = Date.now();
     const processedSchedules = await Promise.all(schedules.map(async (schedule) => {
-      const clientInfo = await getClientInfo(schedule.client, req.user.cli_access);
+      const clientInfo = await getClientInfoCached(schedule.client);
       
-      // Extrair informações do JSON info se disponível
-      let supplierName = schedule.supplier;
-      if (schedule.info && typeof schedule.info === 'string') {
-        try {
-          const info = JSON.parse(schedule.info);
-          if (info.emit && info.emit.xNome) {
-            supplierName = info.emit.xNome;
-          }
-        } catch (e) {
-          // Se não conseguir parsear, mantém o supplier original
-        }
-      } else if (schedule.info && schedule.info.emit && schedule.info.emit.xNome) {
-        supplierName = schedule.info.emit.xNome;
-      }
-
-      // Extrair total_value do info se disponível
-      let totalValue = null;
+      // Processar JSON info uma única vez
       let parsedInfo = null;
+      let supplierName = schedule.supplier;
+      let totalValue = null;
       
       if (schedule.info) {
         try {
           parsedInfo = typeof schedule.info === 'string' ? 
             JSON.parse(schedule.info) : schedule.info;
           
-          // Buscar valor total na estrutura correta do XML: total.ICMSTot.vProd
+          // Extrair nome do fornecedor
+          if (parsedInfo.emit && parsedInfo.emit.xNome) {
+            supplierName = parsedInfo.emit.xNome;
+          }
+          
+          // Extrair valor total
           if (parsedInfo.total && parsedInfo.total.ICMSTot) {
             totalValue = parsedInfo.total.ICMSTot.vProd || parsedInfo.total.ICMSTot.vNF || null;
-          } else {
-            // Fallback: calcular somando todos os produtos
-            if (parsedInfo.products && Array.isArray(parsedInfo.products)) {
-              totalValue = parsedInfo.products.reduce((sum, product) => {
-                return sum + (product.total_value || 0);
-              }, 0);
-            } else {
-              totalValue = null;
-            }
+          } else if (parsedInfo.products && Array.isArray(parsedInfo.products)) {
+            totalValue = parsedInfo.products.reduce((sum, product) => {
+              return sum + (product.total_value || 0);
+            }, 0);
           }
           
         } catch (e) {
-          parsedInfo = schedule.info;
+          // Se não conseguir parsear, mantém valores padrão
         }
       }
 
@@ -417,7 +450,8 @@ router.get('/', async (req, res) => {
           number: schedule.number,
           nfe_key: schedule.nfe_key,
           client: clientInfo.name,
-          client_cnpj: schedule.client,
+          client_cnpj: clientInfo.name, // Usar nome do estoque em vez do CNPJ
+          client_cnpj_original: schedule.client, // Manter CNPJ original para referência
           supplier: supplierName,
           case_count: schedule.case_count || 0,
           status: schedule.status,
@@ -436,12 +470,19 @@ router.get('/', async (req, res) => {
         
         return result;
     }));
+    const processTime = Date.now() - processStartTime;
 
     // Contar total
+    const countStartTime = Date.now();
     const [{ total }] = await executeCheckinQuery(
       `SELECT COUNT(*) as total FROM schedule_list ${whereClause}`,
       params
     );
+    const countTime = Date.now() - countStartTime;
+    
+    const totalTime = Date.now() - startTime;
+    
+    console.log(`📊 Performance GET /schedules: Total=${totalTime}ms | DB=${dbTime}ms | Process=${processTime}ms | Count=${countTime}ms | Records=${schedules.length}`);
 
     res.json({
       schedules: processedSchedules,
@@ -642,6 +683,9 @@ router.get('/:id', validate(paramSchemas.id, 'params'), async (req, res) => {
     // Buscar informações do cliente usando a função getClientInfo
     const clientInfo = await getClientInfo(schedule.client, req.user.cli_access);
     processedSchedule.client_info = clientInfo;
+    processedSchedule.client = clientInfo.name; // Definir client com nome do estoque
+    processedSchedule.client_cnpj = clientInfo.name; // Usar nome do estoque em vez do CNPJ
+    processedSchedule.client_cnpj_original = schedule.client; // Manter CNPJ original para referência
 
     res.json({
       schedule: processedSchedule
@@ -1282,9 +1326,28 @@ router.patch('/:id/status', validate(paramSchemas.id, 'params'), validate(schedu
 
     console.log(`✅ Status alterado: ${schedule.status} → ${status}`);
 
-    // Triggers automáticos Corpem WMS
+    // Triggers automáticos baseados no status
+    
+    // Cadastro de produtos CORPEM: quando mudando para "Agendado"
+    if (status === 'Agendado' && schedule.status !== 'Agendado') {
+      console.log('🔗 Status alterado para Agendado - Iniciando cadastro de produtos CORPEM...');
+      
+      triggerProductsIntegration(updatedSchedule, req.user.user)
+        .then(result => {
+          if (result.success) {
+            console.log('✅ Cadastro de produtos CORPEM concluído');
+          } else {
+            console.log('⚠️ Falha no cadastro de produtos CORPEM');
+          }
+        })
+        .catch(error => {
+          console.error('Erro no cadastro de produtos CORPEM:', error.message);
+        });
+    }
+
+    // Integração NF e outras operações: quando mudando para "Conferência"
     if (status === 'Conferência' && schedule.status !== 'Conferência') {
-      console.log('🔗 Iniciando integrações Corpem...');
+      console.log('🔗 Status alterado para Conferência - Iniciando operações de conferência...');
       
       // 1. Salvar produtos na tabela products
       try {
@@ -1341,26 +1404,17 @@ router.patch('/:id/status', validate(paramSchemas.id, 'params'), validate(schedu
         console.error('Erro ao buscar DP:', dpSearchError.message);
       }
       
-      // 3. Integração com Corpem
-      triggerProductsIntegration(updatedSchedule, req.user.user)
-        .then(result => {
-          if (result.success) {
-            console.log('✅ Integração produtos Corpem concluída');
-            return triggerNfEntryIntegration(updatedSchedule, req.user.user);
-          } else {
-            console.log('⚠️ Falha na integração produtos Corpem');
-            return { success: false, message: 'Produtos não foram cadastrados' };
-          }
-        })
+      // 3. Integração NF CORPEM
+      triggerNfEntryIntegration(updatedSchedule, req.user.user)
         .then(nfResult => {
           if (nfResult && nfResult.success) {
-            console.log('✅ Integração NF Corpem concluída');
+            console.log('✅ Integração NF CORPEM concluída');
           } else if (nfResult) {
-            console.log('⚠️ Falha na integração NF Corpem');
+            console.log('⚠️ Falha na integração NF CORPEM');
           }
         })
         .catch(error => {
-          console.error('Erro nas integrações Corpem:', error.message);
+          console.error('Erro na integração NF CORPEM:', error.message);
         });
     }
 
@@ -1510,19 +1564,27 @@ router.get('/client/:client', requireClientAccess('client'), async (req, res) =>
         id, number, nfe_key, client, case_count, date, status, historic, qt_prod, is_booking
        FROM schedule_list 
        ${whereClause}
-       ORDER BY date DESC, id DESC
+       ORDER BY date ASC, id ASC
        LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`,
       params
     );
 
-    // Processar dados de retorno
-    const processedSchedules = schedules.map(schedule => ({
-      ...schedule,
-      historic: typeof schedule.historic === 'string' ? 
-        JSON.parse(schedule.historic) : schedule.historic,
-      date: schedule.date instanceof Date ? 
-        `${schedule.date.getFullYear()}-${String(schedule.date.getMonth() + 1).padStart(2, '0')}-${String(schedule.date.getDate()).padStart(2, '0')}` : 
-        schedule.date
+    // Processar dados de retorno com informações de cliente
+    const processedSchedules = await Promise.all(schedules.map(async (schedule) => {
+      const clientInfo = await getClientInfo(schedule.client, req.user.cli_access);
+      
+      return {
+        ...schedule,
+        client: clientInfo.name, // Definir client com nome do estoque
+        client_cnpj: clientInfo.name, // Usar nome do estoque em vez do CNPJ
+        client_cnpj_original: schedule.client, // Manter CNPJ original para referência
+        client_info: clientInfo,
+        historic: typeof schedule.historic === 'string' ? 
+          JSON.parse(schedule.historic) : schedule.historic,
+        date: schedule.date instanceof Date ? 
+          `${schedule.date.getFullYear()}-${String(schedule.date.getMonth() + 1).padStart(2, '0')}-${String(schedule.date.getDate()).padStart(2, '0')}` : 
+          schedule.date
+      };
     }));
 
     // Contar total para o cliente

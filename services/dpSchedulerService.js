@@ -324,21 +324,22 @@ class DPSchedulerService {
       } else {
         console.log(`⏳ [DP-SEARCH] DP não encontrada para NF ${nfNumber}, Cliente ${clientNumber}`);
         
-        // Busca alternativa apenas por NF para debug
+        // Busca alternativa apenas por NF para debug (incluindo múltiplas NFs)
         const nfOnlyResults = await executeMercocampQuery(`
           SELECT no_dp, no_nf, no_cli
           FROM wtr 
-          WHERE no_nf = ?
+          WHERE (no_nf = ? OR no_nf LIKE ? OR no_nf LIKE ? OR no_nf LIKE ?)
           AND no_dp IS NOT NULL 
           AND no_dp != '' 
           AND no_dp != '0'
           LIMIT 3
-        `, [nfNumber]);
+        `, [nfNumber, `${nfNumber},%`, `%, ${nfNumber},%`, `%, ${nfNumber}`]);
 
         if (nfOnlyResults.length > 0) {
           console.log(`🔍 [DP-SEARCH] Encontradas ${nfOnlyResults.length} entradas para NF ${nfNumber}:`);
           nfOnlyResults.forEach(row => {
-            console.log(`   - DP: ${row.no_dp}, Cliente: ${row.no_cli}`);
+            const nfList = row.no_nf ? row.no_nf.toString().split(',').map(nf => nf.trim()).join(', ') : 'NULL';
+            console.log(`   - DP: ${row.no_dp}, NFs: [${nfList}], Cliente: ${row.no_cli}`);
           });
         }
         

@@ -52,14 +52,14 @@ class DPSyncService {
   }
 
   /**
-   * Busca agendamentos com status 'Em conferência'
+   * Busca agendamentos com status 'Em conferência' ou 'Conferência'
    */
   async getSchedulesInConference() {
     try {
       const query = `
         SELECT id, number, client, integration, no_dp, status
         FROM schedule_list 
-        WHERE status = 'Em conferência'
+        WHERE status IN ('Em conferência', 'Conferência')
         ORDER BY integration ASC
       `;
       
@@ -119,22 +119,61 @@ class DPSyncService {
 
   /**
    * Busca registros na tabela wtr usando número da NF
+   * Considera que no_nf pode conter múltiplas NFs separadas por vírgula
    */
   async searchWTRByNF(nfNumber) {
     try {
       const query = `
         SELECT no_dp, no_nf, cnpj, dt_inclusao, situacao
         FROM wtr 
-        WHERE no_nf = ?
+        WHERE (
+          no_nf = ? OR 
+          no_nf LIKE ? OR 
+          no_nf LIKE ? OR 
+          no_nf LIKE ?
+        )
         AND no_dp IS NOT NULL 
         AND no_dp != '' 
         AND no_dp != '0'
       `;
       
-      const results = await executeMercocampQuery(query, [nfNumber]);
-      console.log(`🔍 Encontrados ${results.length} registros WTR para NF ${nfNumber}`);
+      // Padrões para busca:
+      // 1. NF exata: '221616'
+      // 2. NF no início: '221616, 221686'
+      // 3. NF no meio: '221615, 221616, 221686'  
+      // 4. NF no final: '221615, 221616'
+      const patterns = [
+        nfNumber,                    // Exata
+        `${nfNumber},%`,            // Início (seguida de vírgula)
+        `%, ${nfNumber},%`,         // Meio (precedida e seguida de vírgula com espaço)
+        `%, ${nfNumber}`            // Final (precedida de vírgula com espaço)
+      ];
       
-      return results;
+      const results = await executeMercocampQuery(query, patterns);
+      
+      // Filtrar resultados para garantir match exato (evitar falsos positivos)
+      const filteredResults = results.filter(record => {
+        if (!record.no_nf) return false;
+        
+        // Separar as NFs por vírgula e limpar espaços
+        const nfs = record.no_nf.toString().split(',').map(nf => nf.trim());
+        
+        // Verificar se nossa NF está na lista
+        return nfs.includes(nfNumber.toString());
+      });
+      
+      console.log(`🔍 Encontrados ${filteredResults.length} registros WTR para NF ${nfNumber}`);
+      if (results.length > filteredResults.length) {
+        console.log(`   ⚡ Filtrados ${results.length - filteredResults.length} falsos positivos`);
+      }
+      
+      // Log detalhado dos registros encontrados
+      filteredResults.forEach((record, index) => {
+        const nfList = record.no_nf.toString().split(',').map(nf => nf.trim()).join(', ');
+        console.log(`   ${index + 1}. DP: ${record.no_dp}, NFs: [${nfList}], CNPJ: ${record.cnpj || 'NULL'}`);
+      });
+      
+      return filteredResults;
     } catch (error) {
       console.error(`❌ Erro ao buscar na tabela WTR para NF ${nfNumber}:`, error);
       return [];
@@ -565,21 +604,21 @@ class DPSyncService {
       const inConferenceResult = await executeCheckinQuery(`
         SELECT COUNT(*) as count
         FROM schedule_list 
-        WHERE status = 'Em conferência'
+        WHERE status IN ('Em conferência', 'Conferência')
       `);
 
       // Contar agendamentos em conferência sem DP
       const withoutDPResult = await executeCheckinQuery(`
         SELECT COUNT(*) as count
         FROM schedule_list 
-        WHERE status = 'Em conferência' AND (no_dp = 0 OR no_dp IS NULL)
+        WHERE status IN ('Em conferência', 'Conferência') AND (no_dp = 0 OR no_dp IS NULL)
       `);
 
       // Contar agendamentos em conferência com DP
       const withDPResult = await executeCheckinQuery(`
         SELECT COUNT(*) as count
         FROM schedule_list 
-        WHERE status = 'Em conferência' AND no_dp IS NOT NULL AND no_dp != '0'
+        WHERE status IN ('Em conferência', 'Conferência') AND no_dp IS NOT NULL AND no_dp != '0'
       `);
 
       // Contar agendamentos em estoque

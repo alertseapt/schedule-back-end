@@ -1,6 +1,6 @@
 const mysql = require('mysql2/promise');
 
-// Configurações de banco de dados
+// Configurações de banco de dados com melhor tratamento de conexão
 const dbConfig = {
   host: process.env.DB_HOST || 'mercocamp.ip.odhserver.com',
   port: process.env.DB_PORT || 33101,
@@ -8,7 +8,15 @@ const dbConfig = {
   password: process.env.DB_PASSWORD || 'masterkey',
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  // Configurações válidas para MySQL2 pools
+  idleTimeout: 300000, // 5 minutos de timeout para conexões idle
+  typeCast: function (field, next) {
+    if (field.type === 'TINY' && field.length === 1) {
+      return (field.string() === '1'); // cast tinyint como boolean
+    }
+    return next();
+  }
 };
 
 // Pools de conexão para cada banco
@@ -33,53 +41,114 @@ const cobrancasPool = mysql.createPool({
 });
 
 /**
- * Executa query no banco dbcheckin
+ * Executa query no banco dbcheckin com retry automático
  */
-async function executeCheckinQuery(query, params = []) {
+async function executeCheckinQuery(query, params = [], retryCount = 0) {
+  const maxRetries = 3;
   try {
     const [rows] = await checkinPool.execute(query, params);
     return rows;
   } catch (error) {
-    console.error('❌ Erro na query do dbcheckin:', error);
+    console.error(`❌ Erro na query do dbcheckin (tentativa ${retryCount + 1}):`, error);
+    
+    // Se é um erro de conexão e ainda temos tentativas, tentar novamente
+    if (
+      (error.code === 'ECONNRESET' || 
+       error.code === 'PROTOCOL_CONNECTION_LOST' || 
+       error.code === 'ENOTFOUND' ||
+       error.code === 'ETIMEDOUT') && 
+      retryCount < maxRetries
+    ) {
+      console.log(`🔄 Tentando reconectar ao dbcheckin (tentativa ${retryCount + 1}/${maxRetries})...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return executeCheckinQuery(query, params, retryCount + 1);
+    }
+    
     throw error;
   }
 }
 
 /**
- * Executa query no banco dbmercocamp
+ * Executa query no banco dbmercocamp com retry automático
  */
-async function executeMercocampQuery(query, params = []) {
+async function executeMercocampQuery(query, params = [], retryCount = 0) {
+  const maxRetries = 3;
   try {
     const [rows] = await mercocampPool.execute(query, params);
     return rows;
   } catch (error) {
-    console.error('❌ Erro na query do dbmercocamp:', error);
+    console.error(`❌ Erro na query do dbmercocamp (tentativa ${retryCount + 1}):`, error);
+    
+    // Se é um erro de conexão e ainda temos tentativas, tentar novamente
+    if (
+      (error.code === 'ECONNRESET' || 
+       error.code === 'PROTOCOL_CONNECTION_LOST' || 
+       error.code === 'ENOTFOUND' ||
+       error.code === 'ETIMEDOUT') && 
+      retryCount < maxRetries
+    ) {
+      console.log(`🔄 Tentando reconectar ao dbmercocamp (tentativa ${retryCount + 1}/${maxRetries})...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return executeMercocampQuery(query, params, retryCount + 1);
+    }
+    
     throw error;
   }
 }
 
 /**
- * Executa query no banco dbusers
+ * Executa query no banco dbusers com retry automático
  */
-async function executeUsersQuery(query, params = []) {
+async function executeUsersQuery(query, params = [], retryCount = 0) {
+  const maxRetries = 3;
   try {
     const [rows] = await usersPool.execute(query, params);
     return rows;
   } catch (error) {
-    console.error('❌ Erro na query do dbusers:', error);
+    console.error(`❌ Erro na query do dbusers (tentativa ${retryCount + 1}):`, error);
+    
+    // Se é um erro de conexão e ainda temos tentativas, tentar novamente
+    if (
+      (error.code === 'ECONNRESET' || 
+       error.code === 'PROTOCOL_CONNECTION_LOST' || 
+       error.code === 'ENOTFOUND' ||
+       error.code === 'ETIMEDOUT') && 
+      retryCount < maxRetries
+    ) {
+      console.log(`🔄 Tentando reconectar ao dbusers (tentativa ${retryCount + 1}/${maxRetries})...`);
+      // Aguardar um pouco antes de tentar novamente
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return executeUsersQuery(query, params, retryCount + 1);
+    }
+    
     throw error;
   }
 }
 
 /**
- * Executa query no banco dbcobrancas
+ * Executa query no banco dbcobrancas com retry automático
  */
-async function executeCobrancasQuery(query, params = []) {
+async function executeCobrancasQuery(query, params = [], retryCount = 0) {
+  const maxRetries = 3;
   try {
     const [rows] = await cobrancasPool.execute(query, params);
     return rows;
   } catch (error) {
-    console.error('❌ Erro na query do dbcobrancas:', error);
+    console.error(`❌ Erro na query do dbcobrancas (tentativa ${retryCount + 1}):`, error);
+    
+    // Se é um erro de conexão e ainda temos tentativas, tentar novamente
+    if (
+      (error.code === 'ECONNRESET' || 
+       error.code === 'PROTOCOL_CONNECTION_LOST' || 
+       error.code === 'ENOTFOUND' ||
+       error.code === 'ETIMEDOUT') && 
+      retryCount < maxRetries
+    ) {
+      console.log(`🔄 Tentando reconectar ao dbcobrancas (tentativa ${retryCount + 1}/${maxRetries})...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return executeCobrancasQuery(query, params, retryCount + 1);
+    }
+    
     throw error;
   }
 }

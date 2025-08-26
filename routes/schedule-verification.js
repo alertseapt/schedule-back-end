@@ -6,15 +6,6 @@ const Joi = require('joi');
 
 const router = express.Router();
 
-// Middleware para verificar se usuário tem nível de acesso 9
-const requireLevel9Access = (req, res, next) => {
-  if (req.user.level_access !== 9) {
-    return res.status(403).json({
-      error: 'Acesso negado. Nível de acesso 9 requerido.'
-    });
-  }
-  next();
-};
 
 // Schema de validação para busca
 const searchSchema = Joi.object({
@@ -28,9 +19,8 @@ const changeStatusSchema = Joi.object({
   comment: Joi.string().optional().max(500)
 });
 
-// Todas as rotas requerem autenticação e nível 9
+// Todas as rotas requerem autenticação
 router.use(authenticateToken);
-router.use(requireLevel9Access);
 
 // Função para processar chave de NFe (44+ dígitos)
 const processNfeKey = (input) => {
@@ -79,6 +69,8 @@ router.post('/search', async (req, res) => {
     }
 
     const { input } = value;
+    
+    console.log(`🔍 Busca iniciada por usuário: ${req.user.user} (Nível: ${req.user.level_access})`);
     let searchQuery;
     let searchParam;
 
@@ -102,7 +94,9 @@ router.post('/search', async (req, res) => {
     }
 
     // Executar busca no banco
+    console.log(`🔍 Executando busca - Query: ${searchQuery}, Param: ${searchParam}`);
     const results = await executeCheckinQuery(searchQuery, [searchParam]);
+    console.log(`📊 Encontrados ${results.length} agendamentos na busca inicial`);
 
     // Buscar informações do cliente para cada resultado
     const enrichedResults = await Promise.all(
@@ -136,12 +130,57 @@ router.post('/search', async (req, res) => {
       })
     );
 
+    // Filtrar resultados com base no nível de acesso do usuário
+    let filteredResults = enrichedResults;
+    
+    if (req.user.level_access === 1) {
+      // Usuários com nível 1 só podem ver agendamentos aos quais têm acesso
+      if (req.user.cli_access) {
+        let cliAccess;
+        
+        // Tratar cli_access se estiver como string
+        if (typeof req.user.cli_access === 'string') {
+          try {
+            cliAccess = JSON.parse(req.user.cli_access);
+          } catch (error) {
+            console.error('Erro ao parsear cli_access:', error);
+            cliAccess = {};
+          }
+        } else {
+          cliAccess = req.user.cli_access || {};
+        }
+        
+        // Obter lista de CNPJs aos quais o usuário tem acesso
+        const allowedCnpjs = Object.keys(cliAccess);
+        
+        // Filtrar resultados pelos CNPJs permitidos
+        filteredResults = enrichedResults.filter(schedule => {
+          const scheduleCnpj = schedule.client_cnpj || schedule.client;
+          return allowedCnpjs.some(cnpj => {
+            // Comparar CNPJs removendo formatação
+            const cleanScheduleCnpj = scheduleCnpj.replace(/[^\d]/g, '');
+            const cleanAllowedCnpj = cnpj.replace(/[^\d]/g, '');
+            return cleanScheduleCnpj === cleanAllowedCnpj;
+          });
+        });
+        
+        console.log(`👤 Usuário nível 1 - Filtrados ${filteredResults.length} de ${enrichedResults.length} agendamentos`);
+      } else {
+        // Se não tem cli_access, não pode ver nenhum agendamento
+        filteredResults = [];
+        console.log('👤 Usuário nível 1 sem cli_access - Nenhum agendamento retornado');
+      }
+    } else {
+      // Usuários com nível diferente de 1 podem ver todos os agendamentos
+      console.log(`👤 Usuário nível ${req.user.level_access} - Retornando todos os ${enrichedResults.length} agendamentos`);
+    }
+
     // Retornar resultados
     res.json({
       success: true,
       searchType: input.length >= 44 ? 'nfe_key' : 'number',
       searchValue: searchParam,
-      results: enrichedResults
+      results: filteredResults
     });
 
   } catch (error) {
@@ -234,9 +273,9 @@ router.post('/change-status', async (req, res) => {
     
     await executeCheckinQuery(updateQuery, updateParams);
 
-    // Se o novo status for "Conferência", disparar integrações Corpem
-    if (newStatus === 'Conferência') {
-      console.log(`Status alterado para Conferência - Disparando integrações Corpem (ID: ${scheduleId})`);
+    // Disparar integrações Corpem baseadas no status
+    if (newStatus === 'Agendado' || newStatus === 'Conferência') {
+      console.log(`Status alterado para ${newStatus} - Verificando integrações Corpem (ID: ${scheduleId})`);
       
       try {
         const fullScheduleData = await executeCheckinQuery(
@@ -256,18 +295,29 @@ router.post('/change-status', async (req, res) => {
           }
 
           const userId = req.user.user || req.user.name || 'schedule-verification';
-          const productsResult = await triggerProductsIntegration(scheduleData, userId);
 
-          if (productsResult.success) {
+          // Cadastro de produtos: disparar quando status = "Agendado"
+          if (newStatus === 'Agendado') {
+            console.log(`Disparando cadastro de produtos CORPEM (ID: ${scheduleId})`);
+            const productsResult = await triggerProductsIntegration(scheduleData, userId);
+            
+            if (productsResult.success) {
+              console.log(`Cadastro de produtos CORPEM concluído com sucesso (ID: ${scheduleId})`);
+            } else {
+              console.log(`Cadastro de produtos CORPEM falhou (ID: ${scheduleId}):`, productsResult.message);
+            }
+          }
+
+          // Integração NF: disparar quando status = "Conferência"
+          if (newStatus === 'Conferência') {
+            console.log(`Disparando integração de NF de entrada CORPEM (ID: ${scheduleId})`);
             const nfResult = await triggerNfEntryIntegration(scheduleData, userId);
             
             if (nfResult.success) {
-              console.log(`Integrações Corpem concluídas com sucesso (ID: ${scheduleId})`);
+              console.log(`Integração de NF CORPEM concluída com sucesso (ID: ${scheduleId})`);
             } else {
-              console.log(`Produtos OK, mas NF falhou (ID: ${scheduleId}):`, nfResult.message);
+              console.log(`Integração de NF CORPEM falhou (ID: ${scheduleId}):`, nfResult.message);
             }
-          } else {
-            console.log(`Produtos falharam, NF não integrada (ID: ${scheduleId}):`, productsResult.message);
           }
         }
       } catch (integrationError) {

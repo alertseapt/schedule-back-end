@@ -1,7 +1,0 @@
-[build]
-builder = "python"
-installCommand = "pip install --upgrade pip setuptools wheel && pip install -r requirements.txt"
-
-[deploy]
-startCommand = "gunicorn wsgi:application"
-restartPolicyType = "ON_FAILURE"
